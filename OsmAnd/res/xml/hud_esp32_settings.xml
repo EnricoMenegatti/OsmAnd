@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+	
+	<PreferenceCategory android:title="@string/hud_connection_status">
+		<Preference
+			android:key="hud_connection_status"
+			android:title="@string/hud_connection_status"
+			android:selectable="false"/>
+		
+		<Preference
+			android:key="hud_test"
+			android:title="@string/hud_test"/>
+	</PreferenceCategory>
+	
+	<PreferenceCategory android:title="@string/shared_string_settings">
+		<EditTextPreference
+			android:key="hud_esp32_device_name"
+			android:title="@string/hud_device_name"
+			android:defaultValue="HUD-Moto"/>
+		
+		<EditTextPreference
+			android:key="hud_esp32_pos_rate_hz"
+			android:title="@string/hud_pos_rate"
+			android:defaultValue="2"
+			android:inputType="number"/>
+		
+		<EditTextPreference
+			android:key="hud_esp32_window_ahead_m"
+			android:title="@string/hud_window_ahead"
+			android:defaultValue="1500"
+			android:inputType="number"/>
+		
+		<CheckBoxPreference
+			android:key="hud_esp32_free_ride"
+			android:title="@string/hud_free_ride"
+			android:defaultValue="true"/>
+		
+		<EditTextPreference
+			android:key="hud_esp32_free_ride_max_m"
+			android:title="@string/hud_free_ride_max"
+			android:defaultValue="500"
+			android:inputType="number"/>
+		
+		<CheckBoxPreference
+			android:key="hud_esp32_debug_log"
+			android:title="@string/hud_debug_log"
+			android:defaultValue="false"/>
+	</PreferenceCategory>
+	
+</PreferenceScreen>

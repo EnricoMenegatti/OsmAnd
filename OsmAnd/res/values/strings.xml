@@ -11,6 +11,24 @@
 	Strings for OsmAnd core
 	Thx - Hardy
 -->
+	<string name="hud_esp32_plugin_name">HUD ESP32</string>
+	<string name="hud_esp32_plugin_description">Send navigation data to ESP32-based motorcycle HUD via Bluetooth</string>
+	<string name="hud_device_name">HUD Device Name</string>
+	<string name="hud_device_address">HUD Device Address</string>
+	<string name="hud_pos_rate">Position Update Rate (Hz)</string>
+	<string name="hud_window_ahead">Route Window Ahead (m)</string>
+	<string name="hud_free_ride">Enable Free Ride Mode</string>
+	<string name="hud_free_ride_max">Free Ride Max Distance (m)</string>
+	<string name="hud_junction_settings">Junction Detection Settings</string>
+	<string name="hud_debug_log">Debug Logging</string>
+	<string name="hud_connection_status">Connection Status</string>
+	<string name="hud_test">Test HUD</string>
+	<string name="hud_connect">Connect</string>
+	<string name="hud_disconnect">Disconnect</string>
+	<string name="hud_status_disconnected">Disconnected</string>
+	<string name="hud_status_connecting">Connecting...</string>
+	<string name="hud_status_connected">Connected</string>
+	
 	<string name="flyover_recording">Recording a map video: %1$s</string>
 	<string name="flyovers">Flyovers</string>
 	<string name="map_source_saved_as">Map source saved as \'%1$s\'.</string>

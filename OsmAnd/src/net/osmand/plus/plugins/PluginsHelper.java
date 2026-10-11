@@ -121,11 +121,12 @@ public class PluginsHelper {
 		allPlugins.add(new OsmEditingPlugin(app));
 		allPlugins.add(new MapillaryPlugin(app));
 		allPlugins.add(new PanoramaxPlugin(app));
-		allPlugins.add(new ExternalSensorsPlugin(app));
-		allPlugins.add(new VehicleMetricsPlugin(app));
-		allPlugins.add(new AstronomyPlugin(app));
-		allPlugins.add(new AccessibilityPlugin(app));
-		allPlugins.add(new OsmandDevelopmentPlugin(app));
+	allPlugins.add(new ExternalSensorsPlugin(app));
+	allPlugins.add(new VehicleMetricsPlugin(app));
+	allPlugins.add(new AstronomyPlugin(app));
+	allPlugins.add(new AccessibilityPlugin(app));
+	allPlugins.add(new net.osmand.plus.plugins.hud.HudEsp32Plugin(app));
+	allPlugins.add(new OsmandDevelopmentPlugin(app));
 
 		loadCustomPlugins(app);
 		registerAppInitializingDependedProperties(app);
