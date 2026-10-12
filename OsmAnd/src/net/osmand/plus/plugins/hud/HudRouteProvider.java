@@ -282,11 +282,15 @@ public class HudRouteProvider {
 		
 		try {
 			NextDirectionInfo nextInfo = new NextDirectionInfo();
-			routingHelper.getNextRouteDirectionInfo(nextInfo, false);
+			routingHelper.getNextRouteDirectionInfo(nextInfo, true);
 			
 			if (nextInfo.directionInfo != null) {
 				turnType = nextInfo.directionInfo.getTurnType();
 				distanceToTurn = nextInfo.distanceTo;
+				
+				if (shouldSkipDirection(turnType)) {
+					return;
+				}
 				
 				if (!Algorithms.isEmpty(nextInfo.directionInfo.getStreetName())) {
 					streetName = nextInfo.directionInfo.getStreetName();
@@ -317,15 +321,33 @@ public class HudRouteProvider {
 		int turn = TurnTypeMapper.mapTurnType(turnType);
 		int exit = TurnTypeMapper.getExitNumber(turnType);
 		
-		if (plugin.HUD_DEBUG_LOG.get()) {
-			LOG.info("Sending maneuver: turn=" + turn + " dist=" + distanceToTurn + 
-				"m street=" + streetName + " (type=" + turnType + ")");
-		}
+		LOG.info("[NAV] Sending maneuver: turn=" + turn + " dist=" + distanceToTurn + 
+			"m street=\"" + streetName + "\" (type=" + turnType + ")");
 		
 		byte[] packet = HudProtocolEncoder.encodeManeuver(
 			turn, distanceToTurn, exit, false, false, streetName
 		);
 		bleClient.write(packet);
+	}
+	
+	private boolean shouldSkipDirection(TurnType turnType) {
+		if (turnType == null) {
+			return true;
+		}
+		
+		if (turnType.getValue() == TurnType.C) {
+			return true;
+		}
+		
+		if (turnType.getValue() == TurnType.TU || turnType.getValue() == TurnType.TRU) {
+			return false;
+		}
+		
+		if (turnType.isSkipToSpeak()) {
+			return true;
+		}
+		
+		return false;
 	}
 	
 	private void checkAndSendJunction(@NonNull HudBleClient bleClient, 

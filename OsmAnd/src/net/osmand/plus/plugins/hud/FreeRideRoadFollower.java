@@ -183,13 +183,13 @@ public class FreeRideRoadFollower {
 		try {
 			JunctionDetector.JunctionInfo junction = junctionDetector.detectInFreeRide(location, currentRoad);
 			
-			int turn = 1;
-			int distM = 500;
-			String streetName = "";
-			
-			if (junction != null) {
-				distM = junction.distanceM;
+			if (junction == null || junction.distanceM <= 0) {
+				return;
 			}
+			
+			int turn = 1;
+			int distM = junction.distanceM;
+			String streetName = "";
 			
 			if (currentRoad != null) {
 				try {
@@ -205,14 +205,13 @@ public class FreeRideRoadFollower {
 				}
 			}
 			
+			LOG.info("[FREE] Sending maneuver: turn=" + turn + " dist=" + distM + 
+				"m street=\"" + streetName + "\" (junction)");
+			
 			byte[] packet = HudProtocolEncoder.encodeManeuver(
 				turn, distM, 0, false, false, streetName
 			);
 			bleClient.write(packet);
-			
-			if (plugin.HUD_DEBUG_LOG.get()) {
-				LOG.info("Sent free ride maneuver: straight arrow, dist=" + distM + "m, street=" + streetName);
-			}
 		} catch (Exception e) {
 			if (plugin.HUD_DEBUG_LOG.get()) {
 				LOG.warn("Error sending free ride maneuver", e);
