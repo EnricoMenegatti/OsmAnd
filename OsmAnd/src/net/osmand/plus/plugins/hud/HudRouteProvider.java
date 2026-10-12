@@ -37,14 +37,17 @@ public class HudRouteProvider {
 	private double[] windowCumDist;
 	private int lastManeuverDist = -1;
 	private TurnType lastManeuverType;
+	private int lastJunctionDist = -1;
+	private TurnType lastJunctionType;
 	private long lastTripUpdate = 0;
-	private long lastJunctionCheckTime = 0;
+	private long lastJunctionSentTime = 0;
 	private float lastValidHeading = 0;
 	private int lastWindowStartIndex = -1;
 	private long lastWindowSentTime = 0;
 	
 	private static final long TRIP_UPDATE_INTERVAL = 5000;
-	private static final long JUNCTION_CHECK_INTERVAL = 3000;
+	private static final long JUNCTION_RESEND_INTERVAL = 1000;
+	private static final int JUNCTION_WARNING_DISTANCE_M = 300;
 	private static final long MIN_WINDOW_UPDATE_INTERVAL = 2000;
 	
 	public HudRouteProvider(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
@@ -86,6 +89,7 @@ public class HudRouteProvider {
 		}
 		
 		sendManeuver(bleClient);
+		sendJunctionWarning(bleClient);
 		
 		long now = System.currentTimeMillis();
 		if (now - lastTripUpdate >= TRIP_UPDATE_INTERVAL) {
@@ -262,12 +266,6 @@ public class HudRouteProvider {
 		
 		byte[] endPacket = HudProtocolEncoder.encodeEnd(deltaPoints);
 		bleClient.write(endPacket);
-		
-		// Check for junctions ahead
-		List<RouteSegmentResult> segments = route.getOriginalRoute();
-		if (segments != null && !segments.isEmpty()) {
-			checkAndSendJunction(bleClient, location, segments);
-		}
 	}
 	
 	private void sendManeuver(@NonNull HudBleClient bleClient) {
@@ -328,32 +326,74 @@ public class HudRouteProvider {
 		bleClient.write(packet);
 	}
 	
-	private void checkAndSendJunction(@NonNull HudBleClient bleClient, 
-	                                   @NonNull Location location,
-	                                   @NonNull List<RouteSegmentResult> segments) {
-		long now = System.currentTimeMillis();
-		if (now - lastJunctionCheckTime < JUNCTION_CHECK_INTERVAL) {
+	private void sendJunctionWarning(@NonNull HudBleClient bleClient) {
+		RoutingHelper routingHelper = app.getRoutingHelper();
+		
+		if (!routingHelper.isRouteCalculated() || !routingHelper.isFollowingMode()) {
 			return;
 		}
-		lastJunctionCheckTime = now;
+		
+		int kind = JunctionDetector.JUNCTION_KIND_NONE;
+		int distanceM = 0;
+		int side = 0;
+		int exit = 0;
+		TurnType junctionTurnType = null;
 		
 		try {
-			JunctionDetector.JunctionInfo junction = junctionDetector.detectInNavigation(location, segments);
-			if (junction != null) {
-				byte[] packet = HudProtocolEncoder.encodeJunction(
-					junction.type, junction.distanceM, junction.exitNumber
-				);
-				bleClient.write(packet);
+			NextDirectionInfo nextInfo = new NextDirectionInfo();
+			routingHelper.getNextRouteDirectionInfo(nextInfo, true);
+			
+			if (nextInfo != null && nextInfo.distanceTo >= 0 && nextInfo.distanceTo <= JUNCTION_WARNING_DISTANCE_M 
+					&& nextInfo.directionInfo != null) {
+				TurnType turnType = nextInfo.directionInfo.getTurnType();
 				
-				if (plugin.HUD_DEBUG_LOG.get()) {
-					LOG.info("Sent junction: " + junction);
+				if (turnType != null && turnType.getValue() != TurnType.C) {
+					junctionTurnType = turnType;
+					distanceM = nextInfo.distanceTo;
+					
+					if (turnType.isRoundAbout()) {
+						kind = JunctionDetector.JUNCTION_KIND_ROUNDABOUT;
+						exit = turnType.getExitOut();
+					} else {
+						kind = JunctionDetector.JUNCTION_KIND_JUNCTION;
+						if (TurnType.isLeftTurn(turnType.getValue())) {
+							side = 1;
+						} else if (TurnType.isRightTurn(turnType.getValue())) {
+							side = 2;
+						}
+					}
 				}
 			}
 		} catch (Exception e) {
-			if (plugin.HUD_DEBUG_LOG.get()) {
-				LOG.warn("Error checking junction", e);
-			}
+			LOG.warn("Error getting junction warning", e);
 		}
+		
+		if (kind == JunctionDetector.JUNCTION_KIND_NONE) {
+			lastJunctionDist = -1;
+			lastJunctionType = null;
+			return;
+		}
+		
+		long now = System.currentTimeMillis();
+		boolean distanceChanged = Math.abs(distanceM - lastJunctionDist) > 10;
+		boolean typeChanged = !junctionTurnType.equals(lastJunctionType);
+		boolean shouldResend = (now - lastJunctionSentTime) >= JUNCTION_RESEND_INTERVAL;
+		
+		if (!distanceChanged && !typeChanged && !shouldResend) {
+			return;
+		}
+		
+		lastJunctionDist = distanceM;
+		lastJunctionType = junctionTurnType;
+		lastJunctionSentTime = now;
+		
+		LOG.info("[NAV] Sending junction: kind=" + kind + " dist=" + distanceM + 
+			"m side=" + side + " exit=" + exit + " (type=" + junctionTurnType + ")");
+		
+		byte[] packet = HudProtocolEncoder.encodeJunction(
+			kind, distanceM, side, exit, routeId, 0xFFFF
+		);
+		bleClient.write(packet);
 	}
 	
 	private void sendTrip(@NonNull HudBleClient bleClient) {

@@ -29,10 +29,12 @@ public class FreeRideRoadFollower {
 	private long lastUpdateTime = 0;
 	private RouteDataObject currentRoad;
 	private long lastRoadSearchTime = 0;
-	private long lastJunctionCheckTime = 0;
+	private long lastJunctionSentTime = 0;
+	private int lastJunctionDist = -1;
+	private int lastJunctionKind = -1;
 	private float lastValidHeading = 0;
 	private static final long ROAD_SEARCH_INTERVAL = 2000;
-	private static final long JUNCTION_CHECK_INTERVAL = 3000;
+	private static final long JUNCTION_RESEND_INTERVAL = 1000;
 	
 	public FreeRideRoadFollower(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
 		this.app = app;
@@ -154,24 +156,35 @@ public class FreeRideRoadFollower {
 	}
 	
 	private void checkAndSendJunction(@NonNull HudBleClient bleClient, @NonNull Location location) {
-		long now = System.currentTimeMillis();
-		if (now - lastJunctionCheckTime < JUNCTION_CHECK_INTERVAL) {
-			return;
-		}
-		lastJunctionCheckTime = now;
-		
 		try {
 			JunctionDetector.JunctionInfo junction = junctionDetector.detectInFreeRide(location, currentRoad);
-			if (junction != null) {
-				byte[] packet = HudProtocolEncoder.encodeJunction(
-					junction.type, junction.distanceM, junction.exitNumber
-				);
-				bleClient.write(packet);
-				
-				if (plugin.HUD_DEBUG_LOG.get()) {
-					LOG.info("Sent junction (free ride): " + junction);
-				}
+			
+			if (junction == null || junction.kind == JunctionDetector.JUNCTION_KIND_NONE) {
+				lastJunctionDist = -1;
+				lastJunctionKind = -1;
+				return;
 			}
+			
+			long now = System.currentTimeMillis();
+			boolean distanceChanged = Math.abs(junction.distanceM - lastJunctionDist) > 10;
+			boolean kindChanged = junction.kind != lastJunctionKind;
+			boolean shouldResend = (now - lastJunctionSentTime) >= JUNCTION_RESEND_INTERVAL;
+			
+			if (!distanceChanged && !kindChanged && !shouldResend) {
+				return;
+			}
+			
+			lastJunctionDist = junction.distanceM;
+			lastJunctionKind = junction.kind;
+			lastJunctionSentTime = now;
+			
+			LOG.info("[FREE] Sending junction: kind=" + junction.kind + " dist=" + junction.distanceM + 
+				"m side=" + junction.side + " exit=" + junction.exitNumber);
+			
+			byte[] packet = HudProtocolEncoder.encodeJunction(
+				junction.kind, junction.distanceM, junction.side, junction.exitNumber, routeId, 0xFFFF
+			);
+			bleClient.write(packet);
 		} catch (Exception e) {
 			if (plugin.HUD_DEBUG_LOG.get()) {
 				LOG.warn("Error checking junction in free ride", e);
