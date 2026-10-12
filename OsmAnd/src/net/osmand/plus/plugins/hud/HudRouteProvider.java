@@ -9,6 +9,8 @@ import net.osmand.Location;
 import net.osmand.PlatformUtil;
 import net.osmand.data.LatLon;
 import net.osmand.plus.OsmandApplication;
+import net.osmand.plus.auto.TripUtils;
+import net.osmand.plus.routing.CurrentStreetName;
 import net.osmand.plus.routing.NextDirectionInfo;
 import net.osmand.plus.routing.RouteCalculationResult;
 import net.osmand.plus.routing.RouteDirectionInfo;
@@ -270,34 +272,30 @@ public class HudRouteProvider {
 	
 	private void sendManeuver(@NonNull HudBleClient bleClient) {
 		RoutingHelper routingHelper = app.getRoutingHelper();
-		RouteCalculationResult route = routingHelper.getRoute();
 		
-		if (route == null || !route.isCalculated()) {
+		if (!routingHelper.isRouteCalculated() || !routingHelper.isFollowingMode()) {
 			return;
 		}
 		
 		TurnType turnType = null;
 		int distanceToTurn = 0;
 		String streetName = "";
+		boolean offRoute = false;
 		
 		try {
-			NextDirectionInfo nextInfo = new NextDirectionInfo();
-			routingHelper.getNextRouteDirectionInfo(nextInfo, true);
-			
-			if (nextInfo.directionInfo != null) {
-				turnType = nextInfo.directionInfo.getTurnType();
-				distanceToTurn = nextInfo.distanceTo;
+			if (routingHelper.isDeviatedFromRoute()) {
+				turnType = TurnType.valueOf(TurnType.OFFR, false);
+				distanceToTurn = (int) routingHelper.getRouteDeviation();
+				offRoute = true;
+			} else {
+				NextDirectionInfo nextInfo = new NextDirectionInfo();
+				routingHelper.getNextRouteDirectionInfo(nextInfo, true);
 				
-				if (shouldSkipDirection(turnType)) {
-					return;
-				}
-				
-				if (!Algorithms.isEmpty(nextInfo.directionInfo.getStreetName())) {
-					streetName = nextInfo.directionInfo.getStreetName();
-				} else if (!Algorithms.isEmpty(nextInfo.directionInfo.getRef())) {
-					streetName = nextInfo.directionInfo.getRef();
-				} else if (!Algorithms.isEmpty(nextInfo.directionInfo.getDestinationName())) {
-					streetName = nextInfo.directionInfo.getDestinationName();
+				if (nextInfo != null && nextInfo.distanceTo >= 0 && nextInfo.directionInfo != null) {
+					CurrentStreetName currentStreetName = TripUtils.getStreetName(nextInfo);
+					streetName = currentStreetName.text != null ? currentStreetName.text : "";
+					turnType = nextInfo.directionInfo.getTurnType();
+					distanceToTurn = nextInfo.distanceTo;
 				}
 			}
 		} catch (Exception e) {
@@ -322,32 +320,12 @@ public class HudRouteProvider {
 		int exit = TurnTypeMapper.getExitNumber(turnType);
 		
 		LOG.info("[NAV] Sending maneuver: turn=" + turn + " dist=" + distanceToTurn + 
-			"m street=\"" + streetName + "\" (type=" + turnType + ")");
+			"m street=\"" + streetName + "\" offRoute=" + offRoute + " (type=" + turnType + ")");
 		
 		byte[] packet = HudProtocolEncoder.encodeManeuver(
-			turn, distanceToTurn, exit, false, false, streetName
+			turn, distanceToTurn, exit, false, offRoute, streetName
 		);
 		bleClient.write(packet);
-	}
-	
-	private boolean shouldSkipDirection(TurnType turnType) {
-		if (turnType == null) {
-			return true;
-		}
-		
-		if (turnType.getValue() == TurnType.C) {
-			return true;
-		}
-		
-		if (turnType.getValue() == TurnType.TU || turnType.getValue() == TurnType.TRU) {
-			return false;
-		}
-		
-		if (turnType.isSkipToSpeak()) {
-			return true;
-		}
-		
-		return false;
 	}
 	
 	private void checkAndSendJunction(@NonNull HudBleClient bleClient, 
