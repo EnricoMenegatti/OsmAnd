@@ -27,6 +27,7 @@ public class HudRouteProvider {
 	
 	private final OsmandApplication app;
 	private final HudEsp32Plugin plugin;
+	private final JunctionDetector junctionDetector;
 	
 	private int routeId = 1;
 	private List<LatLon> currentWindow;
@@ -34,12 +35,15 @@ public class HudRouteProvider {
 	private int lastManeuverDist = -1;
 	private TurnType lastManeuverType;
 	private long lastTripUpdate = 0;
+	private long lastJunctionCheckTime = 0;
 	
 	private static final long TRIP_UPDATE_INTERVAL = 5000;
+	private static final long JUNCTION_CHECK_INTERVAL = 3000;
 	
 	public HudRouteProvider(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
 		this.app = app;
 		this.plugin = plugin;
+		this.junctionDetector = new JunctionDetector(app, plugin);
 	}
 	
 	public void onStateEnter(@Nullable Location location, @NonNull HudBleClient bleClient) {

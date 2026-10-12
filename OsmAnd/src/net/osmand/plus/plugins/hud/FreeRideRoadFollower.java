@@ -22,13 +22,16 @@ public class FreeRideRoadFollower {
 	
 	private final OsmandApplication app;
 	private final HudEsp32Plugin plugin;
+	private final JunctionDetector junctionDetector;
 	
 	private int routeId = 30000;
 	private Location lastLocation;
 	private long lastUpdateTime = 0;
 	private RouteDataObject currentRoad;
 	private long lastRoadSearchTime = 0;
+	private long lastJunctionCheckTime = 0;
 	private static final long ROAD_SEARCH_INTERVAL = 2000;
+	private static final long JUNCTION_CHECK_INTERVAL = 3000;
 	
 	public FreeRideRoadFollower(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
 		this.app = app;
