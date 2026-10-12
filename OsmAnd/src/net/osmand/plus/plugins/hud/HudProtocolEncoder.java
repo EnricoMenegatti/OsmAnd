@@ -109,7 +109,7 @@ public class HudProtocolEncoder {
 		List<byte[]> packets = new ArrayList<>();
 		
 		int attPayload = mtu - 3;
-		int packetOverhead = 3;
+		int packetOverhead = 4;
 		int maxPointsPerPacket = (attPayload - packetOverhead) / 4;
 		maxPointsPerPacket = Math.min(maxPointsPerPacket, 56);
 		
@@ -120,9 +120,10 @@ public class HudProtocolEncoder {
 		
 		for (int i = pointsToSkip; i < points.size(); ) {
 			int n = Math.min(maxPointsPerPacket, points.size() - i);
-			ByteBuffer buf = ByteBuffer.allocate(3 + 4 * n).order(ByteOrder.LITTLE_ENDIAN);
+			ByteBuffer buf = ByteBuffer.allocate(4 + 4 * n).order(ByteOrder.LITTLE_ENDIAN);
 			buf.put(PKT_POINTS_DELTA);
 			buf.putShort((short) (startIndex + i - pointsToSkip));
+			buf.put((byte) n);
 			
 			for (int j = 0; j < n; j++) {
 				LatLon pt = points.get(i + j);
@@ -313,11 +314,15 @@ public class HudProtocolEncoder {
 				
 			case PKT_POINTS_DELTA:
 				sb.append("POINTS_DELTA len=").append(packet.length);
-				if (packet.length >= 3) {
+				if (packet.length >= 4) {
 					short idx = buf.getShort();
-					int nPoints = (packet.length - 3) / 4;
-					sb.append(" startIdx=").append(idx & 0xFFFF).append(" n=").append(nPoints);
-					if (packet.length >= 7) {
+					byte n = buf.get();
+					sb.append(" firstIdx=").append(idx & 0xFFFF).append(" n=").append(n & 0xFF);
+					int expectedLen = 4 + (n & 0xFF) * 4;
+					if (packet.length != expectedLen) {
+						sb.append(" INVALID_LEN(expected=").append(expectedLen).append(")");
+					}
+					if (packet.length >= 8) {
 						short dx0 = buf.getShort();
 						short dy0 = buf.getShort();
 						sb.append(" first_dx=").append(dx0).append("dm (").append(dx0/10.0).append("m)");

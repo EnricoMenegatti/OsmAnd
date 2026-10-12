@@ -75,13 +75,17 @@ public class HudController {
 						return;
 					}
 					
-					byte lastResult = status[1];
-					if (lastResult != 0x00) {
+					byte lastResult = status[6];
+					int resultCode = lastResult & 0xFF;
+					
+					if (resultCode >= 11) {
 						String errorMsg = decodeStatusError(lastResult);
-						LOG.warn("HUD STATUS error: lastResult=0x" + String.format("%02X", lastResult & 0xFF) + 
+						LOG.warn("HUD STATUS error: lastResult=0x" + String.format("%02X", resultCode) + 
 							" (" + errorMsg + ") - " + HudProtocolEncoder.toHex(status));
 					} else if (plugin.HUD_DEBUG_LOG.get()) {
-						LOG.debug("STATUS received OK: " + HudProtocolEncoder.toHex(status));
+						String resultMsg = decodeStatusError(lastResult);
+						LOG.debug("STATUS received: lastResult=0x" + String.format("%02X", resultCode) + 
+							" (" + resultMsg + ") - " + HudProtocolEncoder.toHex(status));
 					}
 				}
 				
@@ -315,25 +319,25 @@ public class HudController {
 		lastTimeUpdateTime = System.currentTimeMillis();
 	}
 	
-	private String decodeStatusError(byte errorCode) {
-		switch (errorCode & 0xFF) {
-			case 0x00: return "OK";
-			case 0x01: return "ErrGeneric";
-			case 0x02: return "ErrType";
-			case 0x03: return "ErrIndex";
-			case 0x04: return "ErrState";
-			case 0x05: return "ErrBounds";
-			case 0x06: return "ErrCrc";
-			case 0x07: return "ErrTimeout";
-			case 0x08: return "ErrOverflow";
-			case 0x09: return "ErrInvalid";
-			case 0x0A: return "ErrNoData";
-			case 0x0B: return "ErrShort (packet truncated/too short)";
-			case 0x0C: return "ErrLong";
-			case 0x0D: return "ErrSequence";
-			case 0x0E: return "ErrCount (point count mismatch)";
-			case 0x0F: return "ErrFormat";
-			default: return "Unknown error 0x" + String.format("%02X", errorCode & 0xFF);
+	private String decodeStatusError(byte resultCode) {
+		switch (resultCode & 0xFF) {
+			case 0: return "Ok";
+			case 1: return "RouteReady";
+			case 2: return "Position";
+			case 3: return "Cleared";
+			case 4: return "Hello";
+			case 5: return "Meta";
+			case 6: return "Junction";
+			case 7: return "Maneuver";
+			case 8: return "Heartbeat";
+			case 9: return "Time";
+			case 10: return "Trip";
+			case 11: return "ErrShort (packet truncated/too short)";
+			case 12: return "ErrType";
+			case 13: return "ErrSequence";
+			case 14: return "ErrCount (point count mismatch)";
+			case 15: return "ErrNoBegin";
+			default: return "Unknown result 0x" + String.format("%02X", resultCode & 0xFF);
 		}
 	}
 	
