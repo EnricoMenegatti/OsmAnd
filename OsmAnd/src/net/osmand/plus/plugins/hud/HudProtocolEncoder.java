@@ -207,4 +207,21 @@ public class HudProtocolEncoder {
 		}
 		return sb.toString().trim();
 	}
+	
+	/**
+	 * Encode JUNCTION packet (type 0x13).
+	 * @param type 0 = normal junction, 1 = roundabout
+	 * @param distanceM Distance to junction in meters (uint16 LE)
+	 * @param exitNumber For roundabouts: exit number (1-based), 0 for normal junctions
+	 */
+	public static byte[] encodeJunction(int type, int distanceM, int exitNumber) {
+		byte[] packet = new byte[6];
+		packet[0] = (byte) 0x13;
+		packet[1] = 4;
+		packet[2] = (byte) type;
+		packet[3] = (byte) exitNumber;
+		packet[4] = (byte) (distanceM & 0xFF);
+		packet[5] = (byte) ((distanceM >> 8) & 0xFF);
+		return packet;
+	}
 }

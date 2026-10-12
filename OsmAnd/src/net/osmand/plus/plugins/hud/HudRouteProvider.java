@@ -206,6 +206,12 @@ public class HudRouteProvider {
 		
 		byte[] endPacket = HudProtocolEncoder.encodeEnd(windowPoints.size());
 		bleClient.write(endPacket);
+		
+		// Check for junctions ahead
+		List<RouteSegmentResult> segments = route.getOriginalRoute();
+		if (segments != null && !segments.isEmpty()) {
+			checkAndSendJunction(bleClient, location, segments);
+		}
 	}
 	
 	private void sendManeuver(@NonNull HudBleClient bleClient) {
@@ -256,6 +262,34 @@ public class HudRouteProvider {
 			turn, distanceToTurn, exit, false, false, streetName
 		);
 		bleClient.write(packet);
+	}
+	
+	private void checkAndSendJunction(@NonNull HudBleClient bleClient, 
+	                                   @NonNull Location location,
+	                                   @NonNull List<RouteSegmentResult> segments) {
+		long now = System.currentTimeMillis();
+		if (now - lastJunctionCheckTime < JUNCTION_CHECK_INTERVAL) {
+			return;
+		}
+		lastJunctionCheckTime = now;
+		
+		try {
+			JunctionDetector.JunctionInfo junction = junctionDetector.detectInNavigation(location, segments);
+			if (junction != null) {
+				byte[] packet = HudProtocolEncoder.encodeJunction(
+					junction.type, junction.distanceM, junction.exitNumber
+				);
+				bleClient.write(packet);
+				
+				if (plugin.HUD_DEBUG_LOG.get()) {
+					LOG.info("Sent junction: " + junction);
+				}
+			}
+		} catch (Exception e) {
+			if (plugin.HUD_DEBUG_LOG.get()) {
+				LOG.warn("Error checking junction", e);
+			}
+		}
 	}
 	
 	private void sendTrip(@NonNull HudBleClient bleClient) {

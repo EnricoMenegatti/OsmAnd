@@ -33,6 +33,7 @@ public class FreeRideRoadFollower {
 	public FreeRideRoadFollower(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
 		this.app = app;
 		this.plugin = plugin;
+		this.junctionDetector = new JunctionDetector(app, plugin);
 	}
 	
 	public void onStateEnter(@Nullable Location location, @NonNull HudBleClient bleClient) {
@@ -128,6 +129,34 @@ public class FreeRideRoadFollower {
 		
 		byte[] endPacket = HudProtocolEncoder.encodeEnd(points.size());
 		bleClient.write(endPacket);
+		
+		checkAndSendJunction(bleClient, location);
+	}
+	
+	private void checkAndSendJunction(@NonNull HudBleClient bleClient, @NonNull Location location) {
+		long now = System.currentTimeMillis();
+		if (now - lastJunctionCheckTime < JUNCTION_CHECK_INTERVAL) {
+			return;
+		}
+		lastJunctionCheckTime = now;
+		
+		try {
+			JunctionDetector.JunctionInfo junction = junctionDetector.detectInFreeRide(location, currentRoad);
+			if (junction != null) {
+				byte[] packet = HudProtocolEncoder.encodeJunction(
+					junction.type, junction.distanceM, junction.exitNumber
+				);
+				bleClient.write(packet);
+				
+				if (plugin.HUD_DEBUG_LOG.get()) {
+					LOG.info("Sent junction (free ride): " + junction);
+				}
+			}
+		} catch (Exception e) {
+			if (plugin.HUD_DEBUG_LOG.get()) {
+				LOG.warn("Error checking junction in free ride", e);
+			}
+		}
 	}
 	
 	private void searchCurrentRoad(@NonNull Location location) {
