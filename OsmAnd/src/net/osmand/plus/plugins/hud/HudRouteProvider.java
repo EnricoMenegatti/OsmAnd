@@ -237,8 +237,11 @@ public class HudRouteProvider {
 		}
 		
 		LatLon origin = windowPoints.get(0);
+		int totalPoints = windowPoints.size();
+		int deltaPoints = totalPoints - 1;
+		
 		byte[] beginPacket = HudProtocolEncoder.encodeBegin(
-			windowPoints.size(), origin.getLatitude(), origin.getLongitude()
+			totalPoints, origin.getLatitude(), origin.getLongitude()
 		);
 		bleClient.write(beginPacket);
 		
@@ -255,7 +258,7 @@ public class HudRouteProvider {
 			bleClient.write(packet);
 		}
 		
-		byte[] endPacket = HudProtocolEncoder.encodeEnd(windowPoints.size());
+		byte[] endPacket = HudProtocolEncoder.encodeEnd(deltaPoints);
 		bleClient.write(endPacket);
 		
 		// Check for junctions ahead

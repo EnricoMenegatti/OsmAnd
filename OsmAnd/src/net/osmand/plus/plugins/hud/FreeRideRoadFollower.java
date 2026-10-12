@@ -125,8 +125,11 @@ public class FreeRideRoadFollower {
 		bleClient.write(metaPacket);
 		
 		LatLon origin = points.get(0);
+		int totalPoints = points.size();
+		int deltaPoints = totalPoints - 1;
+		
 		byte[] beginPacket = HudProtocolEncoder.encodeBegin(
-			points.size(), origin.getLatitude(), origin.getLongitude()
+			totalPoints, origin.getLatitude(), origin.getLongitude()
 		);
 		bleClient.write(beginPacket);
 		
@@ -143,7 +146,7 @@ public class FreeRideRoadFollower {
 			bleClient.write(packet);
 		}
 		
-		byte[] endPacket = HudProtocolEncoder.encodeEnd(points.size());
+		byte[] endPacket = HudProtocolEncoder.encodeEnd(deltaPoints);
 		bleClient.write(endPacket);
 		
 		checkAndSendJunction(bleClient, location);

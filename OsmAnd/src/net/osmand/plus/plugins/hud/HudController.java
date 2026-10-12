@@ -70,8 +70,18 @@ public class HudController {
 				
 				@Override
 				public void onStatusReceived(byte[] status) {
-					if (plugin.HUD_DEBUG_LOG.get()) {
-						LOG.debug("STATUS received: " + HudProtocolEncoder.toHex(status));
+					if (status == null || status.length < 8) {
+						LOG.warn("Invalid STATUS received: length=" + (status != null ? status.length : 0));
+						return;
+					}
+					
+					byte lastResult = status[1];
+					if (lastResult != 0x00) {
+						String errorMsg = decodeStatusError(lastResult);
+						LOG.warn("HUD STATUS error: lastResult=0x" + String.format("%02X", lastResult & 0xFF) + 
+							" (" + errorMsg + ") - " + HudProtocolEncoder.toHex(status));
+					} else if (plugin.HUD_DEBUG_LOG.get()) {
+						LOG.debug("STATUS received OK: " + HudProtocolEncoder.toHex(status));
 					}
 				}
 				
@@ -303,6 +313,28 @@ public class HudController {
 		
 		bleClient.write(HudProtocolEncoder.encodeTime(unixSeconds, offsetMinutes));
 		lastTimeUpdateTime = System.currentTimeMillis();
+	}
+	
+	private String decodeStatusError(byte errorCode) {
+		switch (errorCode & 0xFF) {
+			case 0x00: return "OK";
+			case 0x01: return "ErrGeneric";
+			case 0x02: return "ErrType";
+			case 0x03: return "ErrIndex";
+			case 0x04: return "ErrState";
+			case 0x05: return "ErrBounds";
+			case 0x06: return "ErrCrc";
+			case 0x07: return "ErrTimeout";
+			case 0x08: return "ErrOverflow";
+			case 0x09: return "ErrInvalid";
+			case 0x0A: return "ErrNoData";
+			case 0x0B: return "ErrShort (packet truncated/too short)";
+			case 0x0C: return "ErrLong";
+			case 0x0D: return "ErrSequence";
+			case 0x0E: return "ErrCount (point count mismatch)";
+			case 0x0F: return "ErrFormat";
+			default: return "Unknown error 0x" + String.format("%02X", errorCode & 0xFF);
+		}
 	}
 	
 	public State getCurrentState() {

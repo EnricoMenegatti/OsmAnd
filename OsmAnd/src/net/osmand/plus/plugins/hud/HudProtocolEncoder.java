@@ -96,27 +96,33 @@ public class HudProtocolEncoder {
 	 * CRITICAL: Each point's delta is relative to the PREVIOUS point, not the origin.
 	 * First point (index 0) is relative to origin (typically dx=0, dy=0).
 	 * Coordinate system: x = East (positive to east), y = North (positive to north)
-	 * Units: centimeters
-	 * @param points Route points (lat/lon in degrees)
+	 * Units: DECIMETERS (firmware expects dm, applied as lastLocalPt += d/10 meters)
+	 * @param points Route points (lat/lon in degrees), starting from origin (point 0)
 	 * @param originLat Origin latitude in degrees
 	 * @param originLon Origin longitude in degrees
 	 * @param startIndex Starting point index
-	 * @param mtu Maximum packet size
+	 * @param mtu Maximum ATT MTU size
 	 * @return List of PKT_POINTS_DELTA packets
 	 */
 	public static List<byte[]> encodePointsDelta(List<LatLon> points, double originLat, double originLon, 
 			int startIndex, int mtu) {
 		List<byte[]> packets = new ArrayList<>();
-		int maxPointsPerPacket = (mtu - 3) / 4;
+		
+		int attPayload = mtu - 3;
+		int packetOverhead = 3;
+		int maxPointsPerPacket = (attPayload - packetOverhead) / 4;
+		maxPointsPerPacket = Math.min(maxPointsPerPacket, 56);
 		
 		double prevLat = originLat;
 		double prevLon = originLon;
 		
-		for (int i = 0; i < points.size(); ) {
+		int pointsToSkip = 1;
+		
+		for (int i = pointsToSkip; i < points.size(); ) {
 			int n = Math.min(maxPointsPerPacket, points.size() - i);
 			ByteBuffer buf = ByteBuffer.allocate(3 + 4 * n).order(ByteOrder.LITTLE_ENDIAN);
 			buf.put(PKT_POINTS_DELTA);
-			buf.putShort((short) (startIndex + i));
+			buf.putShort((short) (startIndex + i - pointsToSkip));
 			
 			for (int j = 0; j < n; j++) {
 				LatLon pt = points.get(i + j);
@@ -128,8 +134,8 @@ public class HudProtocolEncoder {
 				double cosLat = Math.cos(Math.toRadians(prevLat));
 				double dEastM = dLon * 111320.0 * cosLat;
 				
-				short dx = (short) Math.round(dEastM * 100.0);
-				short dy = (short) Math.round(dNorthM * 100.0);
+				short dx = (short) Math.round(dEastM * 10.0);
+				short dy = (short) Math.round(dNorthM * 10.0);
 				
 				buf.putShort(dx);
 				buf.putShort(dy);
@@ -314,8 +320,8 @@ public class HudProtocolEncoder {
 					if (packet.length >= 7) {
 						short dx0 = buf.getShort();
 						short dy0 = buf.getShort();
-						sb.append(" first_dx=").append(dx0).append("cm (").append(dx0/100.0).append("m)");
-						sb.append(" dy=").append(dy0).append("cm (").append(dy0/100.0).append("m)");
+						sb.append(" first_dx=").append(dx0).append("dm (").append(dx0/10.0).append("m)");
+						sb.append(" dy=").append(dy0).append("dm (").append(dy0/10.0).append("m)");
 					}
 				}
 				break;
