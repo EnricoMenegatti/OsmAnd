@@ -144,15 +144,20 @@ public class HudBleClient {
 	}
 	
 	public void write(byte[] data) {
+		org.apache.commons.logging.Log txLog = PlatformUtil.getLog("HudTx");
+		
 		if (!isConnected() || rxCharacteristic == null) {
-			if (debugLog) {
-				LOG.warn("Attempted write while not connected");
+			txLog.warn("TX QUEUED (not ready): " + HudProtocolEncoder.decodeForLog(data) + 
+				" [connected=" + connected + ", notifyEnabled=" + notifyEnabled + 
+				", rxChar=" + (rxCharacteristic != null) + "]");
+			
+			synchronized (writeQueue) {
+				writeQueue.offer(data);
 			}
 			return;
 		}
 		
-		org.apache.commons.logging.Log txLog = PlatformUtil.getLog("HudTx");
-		txLog.info(HudProtocolEncoder.decodeForLog(data));
+		txLog.info("TX -> " + HudProtocolEncoder.decodeForLog(data));
 		
 		synchronized (writeQueue) {
 			writeQueue.offer(data);
@@ -162,7 +167,22 @@ public class HudBleClient {
 	
 	private void processWriteQueue() {
 		synchronized (writeQueue) {
-			if (writeInProgress || writeQueue.isEmpty() || rxCharacteristic == null) {
+			if (writeInProgress) {
+				if (debugLog) {
+					LOG.debug(TAG + ": processWriteQueue - write already in progress, queue size: " + writeQueue.size());
+				}
+				return;
+			}
+			
+			if (writeQueue.isEmpty()) {
+				if (debugLog) {
+					LOG.debug(TAG + ": processWriteQueue - queue is empty");
+				}
+				return;
+			}
+			
+			if (rxCharacteristic == null) {
+				LOG.warn(TAG + ": processWriteQueue - rxCharacteristic is null, queue size: " + writeQueue.size());
 				return;
 			}
 			
@@ -172,9 +192,13 @@ public class HudBleClient {
 				rxCharacteristic.setValue(data);
 				rxCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
 				
+				if (debugLog) {
+					LOG.debug(TAG + ": processWriteQueue - writing " + data.length + " bytes, queue remaining: " + writeQueue.size());
+				}
+				
 				boolean success = bluetoothGatt.writeCharacteristic(rxCharacteristic);
 				if (!success) {
-					LOG.warn("Write characteristic failed");
+					LOG.warn(TAG + ": writeCharacteristic failed, scheduling reconnect");
 					writeInProgress = false;
 					scheduleReconnect();
 				}
@@ -344,6 +368,17 @@ public class HudBleClient {
 	private void connectToDevice(@NonNull String address) {
 		LOG.info(TAG + ": connectToDevice() address=" + address);
 		
+		if (bluetoothGatt != null) {
+			LOG.warn(TAG + ": Existing GATT connection found, closing it first");
+			try {
+				bluetoothGatt.disconnect();
+				bluetoothGatt.close();
+			} catch (Exception e) {
+				LOG.warn(TAG + ": Error closing existing GATT", e);
+			}
+			bluetoothGatt = null;
+		}
+		
 		if (!hasBluetoothPermissions()) {
 			LOG.error(TAG + ": Missing BLUETOOTH_CONNECT permission");
 			listener.onConnectionError("Missing BLUETOOTH_CONNECT permission (Android 12+)");
@@ -358,6 +393,8 @@ public class HudBleClient {
 			
 			bluetoothGatt = device.connectGatt(context, false, gattCallback, 
 					BluetoothDevice.TRANSPORT_LE);
+			
+			LOG.info(TAG + ": connectGatt returned: " + (bluetoothGatt != null ? "success" : "null"));
 		} catch (SecurityException e) {
 			listener.onConnectionError("Missing Bluetooth permissions");
 		} catch (Exception e) {
@@ -477,21 +514,31 @@ public class HudBleClient {
 		
 		@Override
 		public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+			LOG.info(TAG + ": onDescriptorWrite descriptor=" + descriptor.getUuid() + " status=" + status);
+			
 			if (status == BluetoothGatt.GATT_SUCCESS && descriptor.getUuid().equals(CCCD_UUID)) {
 				notifyEnabled = true;
 				connected = true;
 				reconnectAttempt = 0;
 				
-				if (debugLog) {
-					LOG.info("HUD connected and ready");
-				}
+				LOG.info(TAG + ": Notifications enabled, HUD connected and ready");
 				
 				listener.onConnected();
+				
+				synchronized (writeQueue) {
+					LOG.info(TAG + ": Processing queued writes, queue size: " + writeQueue.size());
+					processWriteQueue();
+				}
 			}
 		}
 		
 		@Override
 		public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+			if (debugLog) {
+				LOG.debug(TAG + ": onCharacteristicWrite status=" + status + 
+					(status == BluetoothGatt.GATT_SUCCESS ? " (SUCCESS)" : " (FAILED)"));
+			}
+			
 			synchronized (writeQueue) {
 				writeInProgress = false;
 				processWriteQueue();

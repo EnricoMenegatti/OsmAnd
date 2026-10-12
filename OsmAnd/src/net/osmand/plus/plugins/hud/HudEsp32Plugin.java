@@ -44,22 +44,34 @@ public class HudEsp32Plugin extends OsmandPlugin {
 	private final IRouteInformationListener routeListener = new IRouteInformationListener() {
 		@Override
 		public void newRouteIsCalculated(boolean newRoute, @NonNull ValueHolder<Boolean> showToast) {
+			LOG.info("Route listener: newRouteIsCalculated, newRoute=" + newRoute);
 			if (workerHandler != null && controller != null) {
-				workerHandler.post(() -> controller.onNewRouteCalculated(newRoute));
+				workerHandler.post(() -> {
+					LOG.info("Route listener callback: onNewRouteCalculated");
+					controller.onNewRouteCalculated(newRoute);
+				});
 			}
 		}
 		
 		@Override
 		public void routeWasCancelled() {
+			LOG.info("Route listener: routeWasCancelled");
 			if (workerHandler != null && controller != null) {
-				workerHandler.post(() -> controller.onRouteCancelled());
+				workerHandler.post(() -> {
+					LOG.info("Route listener callback: onRouteCancelled");
+					controller.onRouteCancelled();
+				});
 			}
 		}
 		
 		@Override
 		public void routeWasFinished() {
+			LOG.info("Route listener: routeWasFinished");
 			if (workerHandler != null && controller != null) {
-				workerHandler.post(() -> controller.onRouteFinished());
+				workerHandler.post(() -> {
+					LOG.info("Route listener callback: onRouteFinished");
+					controller.onRouteFinished();
+				});
 			}
 		}
 	};
