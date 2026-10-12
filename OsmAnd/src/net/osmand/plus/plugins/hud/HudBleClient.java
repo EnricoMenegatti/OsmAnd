@@ -165,6 +165,11 @@ public class HudBleClient {
 	private void startScan() {
 		if (bluetoothAdapter == null) return;
 		
+		if (!hasBluetoothPermissions()) {
+			listener.onConnectionError("Missing BLUETOOTH_SCAN permission (Android 12+)");
+			return;
+		}
+		
 		BluetoothLeScanner scanner = bluetoothAdapter.getBluetoothLeScanner();
 		if (scanner == null) {
 			listener.onConnectionError("BLE scanner not available");
@@ -233,7 +238,22 @@ public class HudBleClient {
 		}
 	};
 	
+	private boolean hasBluetoothPermissions() {
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+			int scanPerm = context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN);
+			int connectPerm = context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT);
+			return scanPerm == android.content.pm.PackageManager.PERMISSION_GRANTED
+				&& connectPerm == android.content.pm.PackageManager.PERMISSION_GRANTED;
+		}
+		return true;
+	}
+	
 	private void connectToDevice(@NonNull String address) {
+		if (!hasBluetoothPermissions()) {
+			listener.onConnectionError("Missing BLUETOOTH_CONNECT permission (Android 12+)");
+			return;
+		}
+		
 		try {
 			BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
 			

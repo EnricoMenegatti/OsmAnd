@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+	xmlns:tools="http://schemas.android.com/tools">
 	
 	<PreferenceCategory android:title="@string/hud_connection_status">
 		<Preference
@@ -13,38 +14,54 @@
 	</PreferenceCategory>
 	
 	<PreferenceCategory android:title="@string/shared_string_settings">
-		<EditTextPreference
+		<net.osmand.plus.settings.preferences.EditTextPreferenceEx
 			android:key="hud_esp32_device_name"
+			android:layout="@layout/preference_with_descr"
 			android:title="@string/hud_device_name"
-			android:defaultValue="HUD-Moto"/>
+			android:defaultValue="HUD-Moto"
+			tools:icon="@drawable/ic_action_bluetooth"/>
 		
-		<EditTextPreference
+		<net.osmand.plus.settings.preferences.EditTextPreferenceEx
 			android:key="hud_esp32_pos_rate_hz"
+			android:layout="@layout/preference_with_descr"
 			android:title="@string/hud_pos_rate"
 			android:defaultValue="2"
-			android:inputType="number"/>
+			android:inputType="number"
+			tools:icon="@drawable/ic_action_time_span"/>
 		
-		<EditTextPreference
+		<net.osmand.plus.settings.preferences.EditTextPreferenceEx
 			android:key="hud_esp32_window_ahead_m"
+			android:layout="@layout/preference_with_descr"
 			android:title="@string/hud_window_ahead"
 			android:defaultValue="1500"
-			android:inputType="number"/>
+			android:inputType="number"
+			tools:icon="@drawable/ic_action_route_distance"/>
 		
-		<CheckBoxPreference
+		<net.osmand.plus.settings.preferences.SwitchPreferenceEx
 			android:key="hud_esp32_free_ride"
+			android:layout="@layout/preference_with_descr_dialog_and_switch"
 			android:title="@string/hud_free_ride"
-			android:defaultValue="true"/>
+			android:summaryOn="@string/shared_string_enabled"
+			android:summaryOff="@string/shared_string_disabled"
+			android:defaultValue="true"
+			tools:icon="@drawable/ic_action_map_direction"/>
 		
-		<EditTextPreference
+		<net.osmand.plus.settings.preferences.EditTextPreferenceEx
 			android:key="hud_esp32_free_ride_max_m"
+			android:layout="@layout/preference_with_descr"
 			android:title="@string/hud_free_ride_max"
 			android:defaultValue="500"
-			android:inputType="number"/>
+			android:inputType="number"
+			tools:icon="@drawable/ic_action_route_distance"/>
 		
-		<CheckBoxPreference
+		<net.osmand.plus.settings.preferences.SwitchPreferenceEx
 			android:key="hud_esp32_debug_log"
+			android:layout="@layout/preference_with_descr_dialog_and_switch"
 			android:title="@string/hud_debug_log"
-			android:defaultValue="false"/>
+			android:summaryOn="@string/shared_string_enabled"
+			android:summaryOff="@string/shared_string_disabled"
+			android:defaultValue="false"
+			tools:icon="@drawable/ic_action_bug"/>
 	</PreferenceCategory>
 	
 </PreferenceScreen>
