@@ -5,8 +5,12 @@ import androidx.annotation.Nullable;
 
 import net.osmand.Location;
 import net.osmand.PlatformUtil;
+import net.osmand.ResultMatcher;
+import net.osmand.binary.RouteDataObject;
 import net.osmand.data.LatLon;
 import net.osmand.plus.OsmandApplication;
+import net.osmand.plus.helpers.CurrentPositionHelper;
+import net.osmand.plus.settings.backend.ApplicationMode;
 
 import org.apache.commons.logging.Log;
 
@@ -22,6 +26,9 @@ public class FreeRideRoadFollower {
 	private int routeId = 30000;
 	private Location lastLocation;
 	private long lastUpdateTime = 0;
+	private RouteDataObject currentRoad;
+	private long lastRoadSearchTime = 0;
+	private static final long ROAD_SEARCH_INTERVAL = 2000;
 	
 	public FreeRideRoadFollower(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
 		this.app = app;
@@ -76,32 +83,23 @@ public class FreeRideRoadFollower {
 			return;
 		}
 		
-		if (!location.hasBearing()) {
-			return;
+		long now = System.currentTimeMillis();
+		if (now - lastRoadSearchTime > ROAD_SEARCH_INTERVAL) {
+			lastRoadSearchTime = now;
+			searchCurrentRoad(location);
 		}
 		
 		routeId = (routeId + 1) & 0xFFFF;
 		
 		int maxDistM = plugin.HUD_FREE_RIDE_MAX_M.get();
-		double bearing = location.getBearing();
-		
 		List<LatLon> points = new ArrayList<>();
-		points.add(new LatLon(location.getLatitude(), location.getLongitude()));
 		
-		double lat = location.getLatitude();
-		double lon = location.getLongitude();
-		int numPoints = Math.min(50, maxDistM / 10);
+		if (currentRoad != null && location.hasBearing()) {
+			points = extractRoadGeometry(currentRoad, location, maxDistM);
+		}
 		
-		for (int i = 1; i <= numPoints; i++) {
-			double distM = (maxDistM / (double) numPoints) * i;
-			
-			double bearingRad = Math.toRadians(bearing);
-			double latRad = Math.toRadians(lat);
-			double dLat = distM * Math.cos(bearingRad) / 111320.0;
-			double dLon = distM * Math.sin(bearingRad) / 
-				(111320.0 * Math.cos(latRad));
-			
-			points.add(new LatLon(lat + dLat, lon + dLon));
+		if (points.isEmpty()) {
+			points = projectStraightAhead(location, maxDistM);
 		}
 		
 		byte[] metaPacket = HudProtocolEncoder.encodeRouteMeta(
@@ -130,5 +128,131 @@ public class FreeRideRoadFollower {
 		
 		byte[] endPacket = HudProtocolEncoder.encodeEnd(points.size());
 		bleClient.write(endPacket);
+	}
+	
+	private void searchCurrentRoad(@NonNull Location location) {
+		try {
+			CurrentPositionHelper helper = app.getLocationProvider().getCurrentPositionHelper();
+			if (helper != null) {
+				helper.getRouteSegment(location, ApplicationMode.DEFAULT, false, new ResultMatcher<RouteDataObject>() {
+					@Override
+					public boolean publish(RouteDataObject road) {
+						currentRoad = road;
+						return true;
+					}
+					
+					@Override
+					public boolean isCancelled() {
+						return false;
+					}
+				});
+			}
+		} catch (Exception e) {
+			if (plugin.HUD_DEBUG_LOG.get()) {
+				LOG.warn("Failed to search current road", e);
+			}
+		}
+	}
+	
+	private List<LatLon> extractRoadGeometry(@NonNull RouteDataObject road, @NonNull Location location, int maxDistM) {
+		List<LatLon> points = new ArrayList<>();
+		
+		try {
+			int pointCount = road.getPointsLength();
+			if (pointCount < 2) {
+				return points;
+			}
+			
+			int closestIdx = 0;
+			double minDist = Double.MAX_VALUE;
+			
+			for (int i = 0; i < pointCount; i++) {
+				double lat = road.getPoint31YTile(i) / (double) (1 << 31) * 180.0;
+				double lon = road.getPoint31XTile(i) / (double) (1 << 31) * 360.0 - 180.0;
+				double dist = Math.sqrt(
+					Math.pow(lat - location.getLatitude(), 2) + 
+					Math.pow(lon - location.getLongitude(), 2)
+				);
+				
+				if (dist < minDist) {
+					minDist = dist;
+					closestIdx = i;
+				}
+			}
+			
+			points.add(new LatLon(location.getLatitude(), location.getLongitude()));
+			
+			double bearing = location.getBearing();
+			boolean forward = true;
+			
+			if (closestIdx < pointCount - 1) {
+				double lat1 = road.getPoint31YTile(closestIdx) / (double) (1 << 31) * 180.0;
+				double lon1 = road.getPoint31XTile(closestIdx) / (double) (1 << 31) * 360.0 - 180.0;
+				double lat2 = road.getPoint31YTile(closestIdx + 1) / (double) (1 << 31) * 180.0;
+				double lon2 = road.getPoint31XTile(closestIdx + 1) / (double) (1 << 31) * 360.0 - 180.0;
+				
+				double roadBearing = Math.toDegrees(Math.atan2(lon2 - lon1, lat2 - lat1));
+				double diff = Math.abs(roadBearing - bearing);
+				if (diff > 180) diff = 360 - diff;
+				
+				forward = diff < 90;
+			}
+			
+			double totalDist = 0;
+			int step = forward ? 1 : -1;
+			int idx = closestIdx + step;
+			
+			while (idx >= 0 && idx < pointCount && totalDist < maxDistM) {
+				double lat = road.getPoint31YTile(idx) / (double) (1 << 31) * 180.0;
+				double lon = road.getPoint31XTile(idx) / (double) (1 << 31) * 360.0 - 180.0;
+				
+				LatLon lastPt = points.get(points.size() - 1);
+				double segDist = net.osmand.util.MapUtils.getDistance(
+					lastPt.getLatitude(), lastPt.getLongitude(), lat, lon
+				);
+				
+				totalDist += segDist;
+				if (totalDist <= maxDistM) {
+					points.add(new LatLon(lat, lon));
+				}
+				
+				idx += step;
+			}
+			
+		} catch (Exception e) {
+			if (plugin.HUD_DEBUG_LOG.get()) {
+				LOG.warn("Failed to extract road geometry", e);
+			}
+		}
+		
+		return points;
+	}
+	
+	private List<LatLon> projectStraightAhead(@NonNull Location location, int maxDistM) {
+		List<LatLon> points = new ArrayList<>();
+		points.add(new LatLon(location.getLatitude(), location.getLongitude()));
+		
+		if (!location.hasBearing()) {
+			return points;
+		}
+		
+		double bearing = location.getBearing();
+		double lat = location.getLatitude();
+		double lon = location.getLongitude();
+		int numPoints = Math.min(50, maxDistM / 10);
+		
+		for (int i = 1; i <= numPoints; i++) {
+			double distM = (maxDistM / (double) numPoints) * i;
+			
+			double bearingRad = Math.toRadians(bearing);
+			double latRad = Math.toRadians(lat);
+			double dLat = distM * Math.cos(bearingRad) / 111320.0;
+			double dLon = distM * Math.sin(bearingRad) / 
+				(111320.0 * Math.cos(latRad));
+			
+			points.add(new LatLon(lat + dLat, lon + dLon));
+		}
+		
+		return points;
 	}
 }

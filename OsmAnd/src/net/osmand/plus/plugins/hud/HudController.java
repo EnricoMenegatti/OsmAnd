@@ -7,6 +7,7 @@ import androidx.annotation.Nullable;
 
 import net.osmand.Location;
 import net.osmand.PlatformUtil;
+import net.osmand.plus.NavigationService;
 import net.osmand.plus.OsmandApplication;
 import net.osmand.plus.routing.RoutingHelper;
 
@@ -198,12 +199,35 @@ public class HudController {
 			routeProvider.onStateExit();
 		} else if (oldState == State.FREE && freeRideFollower != null) {
 			freeRideFollower.onStateExit();
+			stopNavigationService();
 		}
 		
 		if (newState == State.NAV && routeProvider != null) {
 			routeProvider.onStateEnter(lastLocation, bleClient);
 		} else if (newState == State.FREE && freeRideFollower != null) {
+			startNavigationService();
 			freeRideFollower.onStateEnter(lastLocation, bleClient);
+		}
+	}
+	
+	private void startNavigationService() {
+		try {
+			app.startNavigationService(NavigationService.USED_BY_HUD);
+			LOG.info("Started NavigationService for HUD free ride");
+		} catch (Exception e) {
+			LOG.error("Failed to start NavigationService for HUD", e);
+		}
+	}
+	
+	private void stopNavigationService() {
+		try {
+			NavigationService service = app.getNavigationService();
+			if (service != null) {
+				service.stopIfNeeded(app, NavigationService.USED_BY_HUD);
+				LOG.info("Stopped NavigationService for HUD free ride");
+			}
+		} catch (Exception e) {
+			LOG.error("Failed to stop NavigationService for HUD", e);
 		}
 	}
 	
