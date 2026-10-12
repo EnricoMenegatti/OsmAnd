@@ -115,33 +115,42 @@ public class HudEsp32Plugin extends OsmandPlugin {
 	
 	@Override
 	public boolean init(@NonNull OsmandApplication app, @Nullable Activity activity) {
-		RoutingHelper routingHelper = app.getRoutingHelper();
-		routingHelper.addListener(routeListener);
-		
-		workerThread = new HandlerThread("HudWorker");
-		workerThread.start();
-		workerHandler = new Handler(workerThread.getLooper());
-		
-		controller = new HudController(app, this, workerHandler);
-		controller.init();
-		
-		return true;
+		try {
+			RoutingHelper routingHelper = app.getRoutingHelper();
+			routingHelper.addListener(routeListener);
+			
+			workerThread = new HandlerThread("HudWorker");
+			workerThread.start();
+			workerHandler = new Handler(workerThread.getLooper());
+			
+			controller = new HudController(app, this, workerHandler);
+			controller.init();
+			
+			return true;
+		} catch (Exception e) {
+			LOG.error("Failed to initialize HUD ESP32 plugin", e);
+			return false;
+		}
 	}
 	
 	@Override
 	public void disable(@NonNull OsmandApplication app) {
-		RoutingHelper routingHelper = app.getRoutingHelper();
-		routingHelper.removeListener(routeListener);
-		
-		if (controller != null) {
-			controller.destroy();
-			controller = null;
-		}
-		
-		if (workerThread != null) {
-			workerThread.quitSafely();
-			workerThread = null;
-			workerHandler = null;
+		try {
+			RoutingHelper routingHelper = app.getRoutingHelper();
+			routingHelper.removeListener(routeListener);
+			
+			if (controller != null) {
+				controller.destroy();
+				controller = null;
+			}
+			
+			if (workerThread != null) {
+				workerThread.quitSafely();
+				workerThread = null;
+				workerHandler = null;
+			}
+		} catch (Exception e) {
+			LOG.error("Error disabling HUD ESP32 plugin", e);
 		}
 	}
 	
