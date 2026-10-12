@@ -7,7 +7,9 @@
     <application>
         <provider
             android:name="androidx.core.content.FileProvider"
-            tools:replace="android:authorities"
-            android:authorities="net.osmand.plus.hud.fileprovider"/>
+            android:authorities="net.osmand.plus.hud.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true"
+            tools:replace="android:authorities"/>
     </application>
 </manifest>

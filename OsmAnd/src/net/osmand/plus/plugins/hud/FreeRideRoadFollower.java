@@ -164,7 +164,7 @@ public class FreeRideRoadFollower {
 	
 	private void searchCurrentRoad(@NonNull Location location) {
 		try {
-			CurrentPositionHelper helper = app.getLocationProvider().getCurrentPositionHelper();
+			CurrentPositionHelper helper = new CurrentPositionHelper(app);
 			if (helper != null) {
 				helper.getRouteSegment(location, ApplicationMode.DEFAULT, false, new ResultMatcher<RouteDataObject>() {
 					@Override
