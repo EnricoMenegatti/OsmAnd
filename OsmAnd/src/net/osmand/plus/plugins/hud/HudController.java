@@ -49,6 +49,9 @@ public class HudController {
 	}
 	
 	public void init() {
+		routeProvider = new HudRouteProvider(app, plugin);
+		freeRideFollower = new FreeRideRoadFollower(app, plugin);
+		
 		bleClient = new HudBleClient(
 			app,
 			handler,
@@ -79,15 +82,14 @@ public class HudController {
 			plugin.HUD_DEBUG_LOG.get()
 		);
 		
-		routeProvider = new HudRouteProvider(app, plugin);
-		freeRideFollower = new FreeRideRoadFollower(app, plugin);
-		
-		String address = plugin.HUD_DEVICE_ADDRESS.get();
-		String name = plugin.HUD_DEVICE_NAME.get();
-		
-		if (address != null || name != null) {
-			bleClient.connect(address, name != null ? name : "HUD-Moto");
-		}
+		handler.postDelayed(() -> {
+			String address = plugin.HUD_DEVICE_ADDRESS.get();
+			String name = plugin.HUD_DEVICE_NAME.get();
+			
+			if (address != null || name != null) {
+				bleClient.connect(address, name != null ? name : "HUD-Moto");
+			}
+		}, 3000);
 		
 		handler.post(this::periodicTasks);
 	}

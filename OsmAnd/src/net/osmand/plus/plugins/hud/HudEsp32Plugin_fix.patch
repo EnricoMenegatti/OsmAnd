@@ -1,0 +1,12 @@
+The issue is likely that:
+1. The plugin is being initialized before Bluetooth system service is ready
+2. On first launch, there's no saved preference for enabled state
+3. The BleClient tries to access Bluetooth during construction/init
+
+Potential fix: Defer BLE initialization until the plugin is actually needed or settings screen is opened.
+Lazy initialize the BleClient only when:
+- Settings screen is opened
+- User explicitly enables the plugin
+- App has finished initialization
+
+Also: The plugin should not be enabled by default on first install.
