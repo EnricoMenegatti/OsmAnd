@@ -263,17 +263,56 @@ public class HudBleClient {
 			BluetoothDevice device = result.getDevice();
 			LOG.info(TAG + ": onScanResult - device found");
 			try {
-				String name = device.getName();
 				String address = device.getAddress();
-				LOG.info(TAG + ": Device: name=" + name + " address=" + address + " rssi=" + result.getRssi());
+				String deviceName = device.getName();
+				int rssi = result.getRssi();
 				
-				if (targetName.equals(name)) {
-					LOG.info(TAG + ": Found matching HUD device: " + address);
+				LOG.info(TAG + ": Device: name=" + deviceName + " address=" + address + " rssi=" + rssi);
+				
+				boolean matches = false;
+				String matchReason = "";
+				
+				if (result.getScanRecord() != null) {
+					String scanName = result.getScanRecord().getDeviceName();
+					List<ParcelUuid> uuids = result.getScanRecord().getServiceUuids();
+					
+					LOG.info(TAG + ": ScanRecord: deviceName=" + scanName + " serviceUuids=" + 
+						(uuids != null ? uuids.size() + " found" : "null"));
+					
+					if (scanName != null && targetName.equals(scanName)) {
+						matches = true;
+						matchReason = "name from ScanRecord";
+						LOG.info(TAG + ": Name from ScanRecord matches: " + scanName);
+					}
+					
+					if (uuids != null) {
+						for (ParcelUuid uuid : uuids) {
+							LOG.info(TAG + ": Service UUID: " + uuid.getUuid());
+							if (SERVICE_UUID.equals(uuid.getUuid())) {
+								matches = true;
+								matchReason = "service UUID";
+								LOG.info(TAG + ": Service UUID matches HUD service!");
+								break;
+							}
+						}
+					}
+				}
+				
+				if (deviceName != null && targetName.equals(deviceName)) {
+					matches = true;
+					matchReason = "name from device";
+					LOG.info(TAG + ": Device name matches: " + deviceName);
+				}
+				
+				if (matches) {
+					LOG.info(TAG + ": Found matching HUD device by " + matchReason + ": " + address);
 					stopScan();
 					targetAddress = address;
 					connectToDevice(address);
 				} else {
-					LOG.info(TAG + ": Device name '" + name + "' doesn't match target '" + targetName + "'");
+					LOG.info(TAG + ": Device doesn't match (name: " + deviceName + 
+						", scanName: " + (result.getScanRecord() != null ? result.getScanRecord().getDeviceName() : "null") + 
+						", target: " + targetName + ")");
 				}
 			} catch (SecurityException e) {
 				LOG.error(TAG + ": SecurityException reading device info", e);
@@ -331,8 +370,13 @@ public class HudBleClient {
 			LOG.info(TAG + ": onConnectionStateChange status=" + status + " newState=" + newState);
 			
 			if (newState == BluetoothProfile.STATE_CONNECTED) {
-				LOG.info(TAG + ": GATT connected, requesting MTU=" + MTU_PREFERRED);
+				LOG.info(TAG + ": GATT connected successfully!");
 				
+				if (targetAddress != null) {
+					LOG.info(TAG + ": Saving address for future direct reconnects: " + targetAddress);
+				}
+				
+				LOG.info(TAG + ": Requesting MTU=" + MTU_PREFERRED);
 				try {
 					boolean ok = gatt.requestMtu(MTU_PREFERRED);
 					LOG.info(TAG + ": MTU request returned: " + ok);
@@ -349,7 +393,7 @@ public class HudBleClient {
 				listener.onDisconnected();
 				
 				if (targetAddress != null) {
-					LOG.info(TAG + ": Scheduling reconnect");
+					LOG.info(TAG + ": Scheduling reconnect to " + targetAddress);
 					scheduleReconnect();
 				}
 			}
@@ -391,10 +435,18 @@ public class HudBleClient {
 		
 		@Override
 		public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-			LOG.info(TAG + ": onServicesDiscovered status=" + status);
+			LOG.info(TAG + ": onServicesDiscovered status=" + status + 
+				(status == BluetoothGatt.GATT_SUCCESS ? " (SUCCESS)" : " (FAILURE)"));
 			
 			if (status == BluetoothGatt.GATT_SUCCESS) {
 				LOG.info(TAG + ": Service discovery successful, looking for service " + SERVICE_UUID);
+				
+				List<BluetoothGattService> services = gatt.getServices();
+				LOG.info(TAG + ": Found " + services.size() + " services total");
+				for (BluetoothGattService svc : services) {
+					LOG.info(TAG + ": Available service: " + svc.getUuid());
+				}
+				
 				BluetoothGattService service = gatt.getService(SERVICE_UUID);
 				
 				if (service != null) {
@@ -402,14 +454,14 @@ public class HudBleClient {
 					rxCharacteristic = service.getCharacteristic(RX_UUID);
 					statusCharacteristic = service.getCharacteristic(STATUS_UUID);
 					
-					LOG.info(TAG + ": RX characteristic: " + (rxCharacteristic != null ? "found" : "NOT FOUND"));
-					LOG.info(TAG + ": STATUS characteristic: " + (statusCharacteristic != null ? "found" : "NOT FOUND"));
+					LOG.info(TAG + ": RX characteristic (" + RX_UUID + "): " + (rxCharacteristic != null ? "FOUND" : "NOT FOUND"));
+					LOG.info(TAG + ": STATUS characteristic (" + STATUS_UUID + "): " + (statusCharacteristic != null ? "FOUND" : "NOT FOUND"));
 					
 					if (rxCharacteristic != null && statusCharacteristic != null) {
 						LOG.info(TAG + ": All characteristics found, enabling notifications");
 						enableStatusNotifications();
 					} else {
-						LOG.error(TAG + ": Missing characteristics");
+						LOG.error(TAG + ": Missing required characteristics");
 						LOG.error("Required characteristics not found");
 						gatt.disconnect();
 					}
