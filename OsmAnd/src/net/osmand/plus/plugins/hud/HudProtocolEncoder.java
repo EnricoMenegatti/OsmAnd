@@ -92,7 +92,9 @@ public class HudProtocolEncoder {
 	}
 	
 	/**
-	 * Encode route points as delta offsets from origin.
+	 * Encode route points as delta offsets.
+	 * CRITICAL: Each point's delta is relative to the PREVIOUS point, not the origin.
+	 * First point (index 0) is relative to origin (typically dx=0, dy=0).
 	 * Coordinate system: x = East (positive to east), y = North (positive to north)
 	 * Units: centimeters
 	 * @param points Route points (lat/lon in degrees)
@@ -107,6 +109,9 @@ public class HudProtocolEncoder {
 		List<byte[]> packets = new ArrayList<>();
 		int maxPointsPerPacket = (mtu - 3) / 4;
 		
+		double prevLat = originLat;
+		double prevLon = originLon;
+		
 		for (int i = 0; i < points.size(); ) {
 			int n = Math.min(maxPointsPerPacket, points.size() - i);
 			ByteBuffer buf = ByteBuffer.allocate(3 + 4 * n).order(ByteOrder.LITTLE_ENDIAN);
@@ -116,11 +121,11 @@ public class HudProtocolEncoder {
 			for (int j = 0; j < n; j++) {
 				LatLon pt = points.get(i + j);
 				
-				double dLat = pt.lat - originLat;
-				double dLon = pt.lon - originLon;
+				double dLat = pt.lat - prevLat;
+				double dLon = pt.lon - prevLon;
 				
 				double dNorthM = dLat * 111320.0;
-				double cosLat = Math.cos(Math.toRadians(originLat));
+				double cosLat = Math.cos(Math.toRadians(prevLat));
 				double dEastM = dLon * 111320.0 * cosLat;
 				
 				short dx = (short) Math.round(dEastM * 100.0);
@@ -128,6 +133,9 @@ public class HudProtocolEncoder {
 				
 				buf.putShort(dx);
 				buf.putShort(dy);
+				
+				prevLat = pt.lat;
+				prevLon = pt.lon;
 			}
 			
 			packets.add(buf.array());
@@ -306,7 +314,8 @@ public class HudProtocolEncoder {
 					if (packet.length >= 7) {
 						short dx0 = buf.getShort();
 						short dy0 = buf.getShort();
-						sb.append(" first_dx=").append(dx0).append("cm dy=").append(dy0).append("cm");
+						sb.append(" first_dx=").append(dx0).append("cm (").append(dx0/100.0).append("m)");
+						sb.append(" dy=").append(dy0).append("cm (").append(dy0/100.0).append("m)");
 					}
 				}
 				break;

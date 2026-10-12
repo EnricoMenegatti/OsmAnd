@@ -9,6 +9,7 @@ import net.osmand.Location;
 import net.osmand.PlatformUtil;
 import net.osmand.data.LatLon;
 import net.osmand.plus.OsmandApplication;
+import net.osmand.plus.routing.NextDirectionInfo;
 import net.osmand.plus.routing.RouteCalculationResult;
 import net.osmand.plus.routing.RouteDirectionInfo;
 import net.osmand.plus.routing.RoutingHelper;
@@ -37,9 +38,12 @@ public class HudRouteProvider {
 	private long lastTripUpdate = 0;
 	private long lastJunctionCheckTime = 0;
 	private float lastValidHeading = 0;
+	private int lastWindowStartIndex = -1;
+	private long lastWindowSentTime = 0;
 	
 	private static final long TRIP_UPDATE_INTERVAL = 5000;
 	private static final long JUNCTION_CHECK_INTERVAL = 3000;
+	private static final long MIN_WINDOW_UPDATE_INTERVAL = 2000;
 	
 	public HudRouteProvider(@NonNull OsmandApplication app, @NonNull HudEsp32Plugin plugin) {
 		this.app = app;
@@ -56,6 +60,8 @@ public class HudRouteProvider {
 	public void onStateExit() {
 		currentWindow = null;
 		windowCumDist = null;
+		lastWindowStartIndex = -1;
+		lastWindowSentTime = 0;
 	}
 	
 	public void onNewRoute(boolean newRoute) {
@@ -134,7 +140,27 @@ public class HudRouteProvider {
 			return true;
 		}
 		
+		long now = System.currentTimeMillis();
+		if (now - lastWindowSentTime < MIN_WINDOW_UPDATE_INTERVAL) {
+			return false;
+		}
+		
 		RoutingHelper routingHelper = app.getRoutingHelper();
+		RouteCalculationResult route = routingHelper.getRoute();
+		if (route == null || !route.isCalculated()) {
+			return false;
+		}
+		
+		int currentIndex = route.getCurrentRoute();
+		if (currentIndex < 0) {
+			return false;
+		}
+		
+		int indexDiff = Math.abs(currentIndex - lastWindowStartIndex);
+		if (indexDiff < 10) {
+			return false;
+		}
+		
 		int remainingDist = routingHelper.getLeftDistance();
 		int windowAhead = plugin.HUD_WINDOW_AHEAD_M.get();
 		
@@ -192,10 +218,18 @@ public class HudRouteProvider {
 		
 		currentWindow = windowPoints;
 		windowCumDist = PolylineUtils.computeCumulativeDistances(windowPoints);
+		lastWindowStartIndex = currentIndex;
+		lastWindowSentTime = System.currentTimeMillis();
 		
 		byte[] metaPacket = HudProtocolEncoder.encodeRouteMeta(
 			routeId, 0, isUpdate, false, backM, (int) windowDist
 		);
+		
+		if (plugin.HUD_DEBUG_LOG.get()) {
+			LOG.info("Sending route window: routeId=" + routeId + " points=" + windowPoints.size() + 
+				" currentIdx=" + currentIndex + " isUpdate=" + isUpdate);
+		}
+		
 		bleClient.write(metaPacket);
 		
 		if (windowPoints.isEmpty()) {
@@ -239,33 +273,38 @@ public class HudRouteProvider {
 			return;
 		}
 		
-		int leftDistance = routingHelper.getLeftDistance();
 		TurnType turnType = null;
-		int distanceToTurn = leftDistance;
+		int distanceToTurn = 0;
 		String streetName = "";
 		
 		try {
-			List<RouteDirectionInfo> directions = routingHelper.getRouteDirections();
-			if (directions != null && !directions.isEmpty()) {
-				RouteDirectionInfo nextTurn = directions.get(0);
-				if (nextTurn != null) {
-					turnType = nextTurn.getTurnType();
-					distanceToTurn = nextTurn.getDistance();
-					
-					if (!Algorithms.isEmpty(nextTurn.getStreetName())) {
-						streetName = nextTurn.getStreetName();
-					} else if (!Algorithms.isEmpty(nextTurn.getRef())) {
-						streetName = nextTurn.getRef();
-					} else if (!Algorithms.isEmpty(nextTurn.getDestinationName())) {
-						streetName = nextTurn.getDestinationName();
-					}
+			NextDirectionInfo nextInfo = new NextDirectionInfo();
+			routingHelper.getNextRouteDirectionInfo(nextInfo, false);
+			
+			if (nextInfo.directionInfo != null) {
+				turnType = nextInfo.directionInfo.getTurnType();
+				distanceToTurn = nextInfo.distanceTo;
+				
+				if (!Algorithms.isEmpty(nextInfo.directionInfo.getStreetName())) {
+					streetName = nextInfo.directionInfo.getStreetName();
+				} else if (!Algorithms.isEmpty(nextInfo.directionInfo.getRef())) {
+					streetName = nextInfo.directionInfo.getRef();
+				} else if (!Algorithms.isEmpty(nextInfo.directionInfo.getDestinationName())) {
+					streetName = nextInfo.directionInfo.getDestinationName();
 				}
 			}
 		} catch (Exception e) {
 			LOG.warn("Error getting maneuver info", e);
 		}
 		
-		if (turnType == null || (distanceToTurn == lastManeuverDist && turnType.equals(lastManeuverType))) {
+		if (turnType == null) {
+			return;
+		}
+		
+		boolean distanceChanged = Math.abs(distanceToTurn - lastManeuverDist) > 10;
+		boolean typeChanged = !turnType.equals(lastManeuverType);
+		
+		if (!distanceChanged && !typeChanged) {
 			return;
 		}
 		
@@ -274,6 +313,11 @@ public class HudRouteProvider {
 		
 		int turn = TurnTypeMapper.mapTurnType(turnType);
 		int exit = TurnTypeMapper.getExitNumber(turnType);
+		
+		if (plugin.HUD_DEBUG_LOG.get()) {
+			LOG.info("Sending maneuver: turn=" + turn + " dist=" + distanceToTurn + 
+				"m street=" + streetName + " (type=" + turnType + ")");
+		}
 		
 		byte[] packet = HudProtocolEncoder.encodeManeuver(
 			turn, distanceToTurn, exit, false, false, streetName
