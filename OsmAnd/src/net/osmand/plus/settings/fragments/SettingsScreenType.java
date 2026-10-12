@@ -57,7 +57,8 @@ public enum SettingsScreenType {
 	EXTERNAL_INPUT_DEVICE(MainExternalInputDevicesFragment.class.getName(), true, ApplyQueryType.SNACK_BAR, R.xml.external_input_device_settings, R.layout.profile_preference_toolbar_with_switch),
 	/* not a preference screen - the Vessel tracker (AIS) plugin builds its own Material 3 UI */
 	AIS_SETTINGS(AisTrackerSettingsFragment.class.getName(), true, ApplyQueryType.NONE, 0, 0),
-	POSITION_ANIMATION(PositionAnimationFragment.class.getName(), true, ApplyQueryType.NONE, R.xml.position_animation_settings, R.layout.profile_preference_toolbar_with_switch);
+	POSITION_ANIMATION(PositionAnimationFragment.class.getName(), true, ApplyQueryType.NONE, R.xml.position_animation_settings, R.layout.profile_preference_toolbar_with_switch),
+	HUD_ESP32_SETTINGS(net.osmand.plus.plugins.hud.HudSettingsFragment.class.getName(), false, null, R.xml.hud_esp32_settings, R.layout.global_preference_toolbar);
 
 	public final String fragmentName;
 	public final boolean profileDependent;

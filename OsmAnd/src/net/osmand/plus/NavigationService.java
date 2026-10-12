@@ -49,6 +49,7 @@ public class NavigationService extends Service {
 	public static int USED_BY_NAVIGATION = 1;
 	public static int USED_BY_GPX = 2;
 	public static int USED_BY_AIS = 4;
+	public static int USED_BY_HUD = 8;
 	public static final String USAGE_INTENT = "SERVICE_USED_BY";
 
 	private final NavigationServiceBinder binder = new NavigationServiceBinder();
@@ -195,7 +196,15 @@ public class NavigationService extends Service {
 
 	@NonNull
 	private NotificationType getNotificationType() {
-		return isUsedBy(USED_BY_NAVIGATION) ? NAVIGATION : isUsedBy(USED_BY_GPX) ? GPX : AIS;
+		if (isUsedBy(USED_BY_NAVIGATION)) {
+			return NAVIGATION;
+		} else if (isUsedBy(USED_BY_GPX)) {
+			return GPX;
+		} else if (isUsedBy(USED_BY_HUD)) {
+			return GPX;
+		} else {
+			return AIS;
+		}
 	}
 
 	private void startForeground(@NonNull Notification notification) {
