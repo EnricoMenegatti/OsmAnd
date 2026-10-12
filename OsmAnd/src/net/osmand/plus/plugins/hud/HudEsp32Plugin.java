@@ -18,7 +18,7 @@ import net.osmand.plus.routing.IRouteInformationListener;
 import net.osmand.plus.routing.RoutingHelper;
 import net.osmand.plus.settings.backend.preferences.CommonPreference;
 import net.osmand.plus.settings.fragments.SettingsScreenType;
-import net.osmand.shared.data.ValueHolder;
+import net.osmand.data.ValueHolder;
 
 import org.apache.commons.logging.Log;
 
