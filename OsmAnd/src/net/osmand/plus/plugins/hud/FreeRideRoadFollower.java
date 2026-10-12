@@ -30,6 +30,7 @@ public class FreeRideRoadFollower {
 	private RouteDataObject currentRoad;
 	private long lastRoadSearchTime = 0;
 	private long lastJunctionCheckTime = 0;
+	private float lastValidHeading = 0;
 	private static final long ROAD_SEARCH_INTERVAL = 2000;
 	private static final long JUNCTION_CHECK_INTERVAL = 3000;
 	
@@ -63,7 +64,19 @@ public class FreeRideRoadFollower {
 	
 	private void sendPosition(@NonNull Location location, @NonNull HudBleClient bleClient) {
 		int speedKmh10 = (int) (location.getSpeed() * 36);
-		int heading10 = location.hasBearing() ? (int) (location.getBearing() * 10) : 0;
+		
+		float heading = 0;
+		if (location.hasBearing() && location.hasSpeed() && location.getSpeed() > 1.0f) {
+			heading = location.getBearing();
+			lastValidHeading = heading;
+		} else if (location.hasBearing()) {
+			heading = location.getBearing();
+			lastValidHeading = heading;
+		} else {
+			heading = lastValidHeading;
+		}
+		
+		int heading10 = (int) (heading * 10);
 		int accuracyM = location.hasAccuracy() ? (int) location.getAccuracy() : 255;
 		
 		byte[] packet = HudProtocolEncoder.encodePos2(
@@ -122,8 +135,8 @@ public class FreeRideRoadFollower {
 			encoderPoints.add(new HudProtocolEncoder.LatLon(pt.getLatitude(), pt.getLongitude()));
 		}
 		
-		List<byte[]> pointsPackets = HudProtocolEncoder.encodePoints(
-			encoderPoints, 0, bleClient.getMtu()
+		List<byte[]> pointsPackets = HudProtocolEncoder.encodePointsDelta(
+			encoderPoints, origin.getLatitude(), origin.getLongitude(), 0, bleClient.getMtu()
 		);
 		
 		for (byte[] packet : pointsPackets) {
@@ -134,6 +147,7 @@ public class FreeRideRoadFollower {
 		bleClient.write(endPacket);
 		
 		checkAndSendJunction(bleClient, location);
+		sendFreeRideManeuver(bleClient, location);
 	}
 	
 	private void checkAndSendJunction(@NonNull HudBleClient bleClient, @NonNull Location location) {
@@ -158,6 +172,47 @@ public class FreeRideRoadFollower {
 		} catch (Exception e) {
 			if (plugin.HUD_DEBUG_LOG.get()) {
 				LOG.warn("Error checking junction in free ride", e);
+			}
+		}
+	}
+	
+	private void sendFreeRideManeuver(@NonNull HudBleClient bleClient, @NonNull Location location) {
+		try {
+			JunctionDetector.JunctionInfo junction = junctionDetector.detectInFreeRide(location, currentRoad);
+			
+			int turn = 1;
+			int distM = 500;
+			String streetName = "";
+			
+			if (junction != null) {
+				distM = junction.distanceM;
+			}
+			
+			if (currentRoad != null) {
+				try {
+					streetName = currentRoad.getName("en");
+					if (streetName == null || streetName.isEmpty()) {
+						streetName = currentRoad.getRef("en", false, true);
+					}
+					if (streetName == null) {
+						streetName = "";
+					}
+				} catch (Exception e) {
+					streetName = "";
+				}
+			}
+			
+			byte[] packet = HudProtocolEncoder.encodeManeuver(
+				turn, distM, 0, false, false, streetName
+			);
+			bleClient.write(packet);
+			
+			if (plugin.HUD_DEBUG_LOG.get()) {
+				LOG.info("Sent free ride maneuver: straight arrow, dist=" + distM + "m, street=" + streetName);
+			}
+		} catch (Exception e) {
+			if (plugin.HUD_DEBUG_LOG.get()) {
+				LOG.warn("Error sending free ride maneuver", e);
 			}
 		}
 	}

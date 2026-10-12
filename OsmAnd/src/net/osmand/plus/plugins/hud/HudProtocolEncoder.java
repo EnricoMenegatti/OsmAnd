@@ -91,6 +91,52 @@ public class HudProtocolEncoder {
 		return packets;
 	}
 	
+	/**
+	 * Encode route points as delta offsets from origin.
+	 * Coordinate system: x = East (positive to east), y = North (positive to north)
+	 * Units: centimeters
+	 * @param points Route points (lat/lon in degrees)
+	 * @param originLat Origin latitude in degrees
+	 * @param originLon Origin longitude in degrees
+	 * @param startIndex Starting point index
+	 * @param mtu Maximum packet size
+	 * @return List of PKT_POINTS_DELTA packets
+	 */
+	public static List<byte[]> encodePointsDelta(List<LatLon> points, double originLat, double originLon, 
+			int startIndex, int mtu) {
+		List<byte[]> packets = new ArrayList<>();
+		int maxPointsPerPacket = (mtu - 3) / 4;
+		
+		for (int i = 0; i < points.size(); ) {
+			int n = Math.min(maxPointsPerPacket, points.size() - i);
+			ByteBuffer buf = ByteBuffer.allocate(3 + 4 * n).order(ByteOrder.LITTLE_ENDIAN);
+			buf.put(PKT_POINTS_DELTA);
+			buf.putShort((short) (startIndex + i));
+			
+			for (int j = 0; j < n; j++) {
+				LatLon pt = points.get(i + j);
+				
+				double dLat = pt.lat - originLat;
+				double dLon = pt.lon - originLon;
+				
+				double dNorthM = dLat * 111320.0;
+				double cosLat = Math.cos(Math.toRadians(originLat));
+				double dEastM = dLon * 111320.0 * cosLat;
+				
+				short dx = (short) Math.round(dEastM * 100.0);
+				short dy = (short) Math.round(dNorthM * 100.0);
+				
+				buf.putShort(dx);
+				buf.putShort(dy);
+			}
+			
+			packets.add(buf.array());
+			i += n;
+		}
+		
+		return packets;
+	}
+	
 	public static byte[] encodeEnd(int nPoints) {
 		ByteBuffer buf = ByteBuffer.allocate(3).order(ByteOrder.LITTLE_ENDIAN);
 		buf.put(PKT_END);
@@ -206,6 +252,196 @@ public class HudProtocolEncoder {
 			sb.append(String.format("%02X ", b & 0xFF));
 		}
 		return sb.toString().trim();
+	}
+	
+	/**
+	 * Decode packet for logging purposes.
+	 * Returns human-readable string with packet type and key fields.
+	 */
+	public static String decodeForLog(byte[] packet) {
+		if (packet == null || packet.length == 0) {
+			return "empty";
+		}
+		
+		ByteBuffer buf = ByteBuffer.wrap(packet).order(ByteOrder.LITTLE_ENDIAN);
+		byte type = buf.get();
+		
+		StringBuilder sb = new StringBuilder();
+		
+		switch (type) {
+			case PKT_HELLO:
+				sb.append("HELLO len=").append(packet.length);
+				if (packet.length >= 3) {
+					sb.append(" ver=").append(packet[1] & 0xFF);
+					sb.append(" caps=0x").append(String.format("%02X", packet[2] & 0xFF));
+				}
+				break;
+				
+			case PKT_BEGIN:
+				sb.append("BEGIN len=").append(packet.length);
+				if (packet.length >= 11) {
+					short nPoints = buf.getShort();
+					int lat0 = buf.getInt();
+					int lon0 = buf.getInt();
+					sb.append(" nPoints=").append(nPoints & 0xFFFF);
+					sb.append(" origin=").append(lat0 / 1e7).append(",").append(lon0 / 1e7);
+				}
+				break;
+				
+			case PKT_POINTS:
+				sb.append("POINTS len=").append(packet.length);
+				if (packet.length >= 4) {
+					short idx = buf.getShort();
+					byte n = buf.get();
+					sb.append(" startIdx=").append(idx & 0xFFFF).append(" n=").append(n & 0xFF);
+				}
+				break;
+				
+			case PKT_POINTS_DELTA:
+				sb.append("POINTS_DELTA len=").append(packet.length);
+				if (packet.length >= 3) {
+					short idx = buf.getShort();
+					int nPoints = (packet.length - 3) / 4;
+					sb.append(" startIdx=").append(idx & 0xFFFF).append(" n=").append(nPoints);
+					if (packet.length >= 7) {
+						short dx0 = buf.getShort();
+						short dy0 = buf.getShort();
+						sb.append(" first_dx=").append(dx0).append("cm dy=").append(dy0).append("cm");
+					}
+				}
+				break;
+				
+			case PKT_END:
+				sb.append("END len=").append(packet.length);
+				if (packet.length >= 3) {
+					short nPoints = buf.getShort();
+					sb.append(" nPoints=").append(nPoints & 0xFFFF);
+				}
+				break;
+				
+			case PKT_POS:
+				sb.append("POS len=").append(packet.length);
+				if (packet.length >= 13) {
+					int lat = buf.getInt();
+					int lon = buf.getInt();
+					short speed = buf.getShort();
+					short heading = buf.getShort();
+					sb.append(" lat=").append(lat / 1e7).append(" lon=").append(lon / 1e7);
+					sb.append(" spd=").append((speed & 0xFFFF) / 36.0).append("m/s");
+					sb.append(" hdg=").append((heading & 0xFFFF) / 10.0).append("°");
+				}
+				break;
+				
+			case PKT_POS2:
+				sb.append("POS2 len=").append(packet.length);
+				if (packet.length >= 19) {
+					int lat = buf.getInt();
+					int lon = buf.getInt();
+					short speed = buf.getShort();
+					short heading = buf.getShort();
+					byte accuracy = buf.get();
+					byte flags = buf.get();
+					short routeId = buf.getShort();
+					short sOnRoute = buf.getShort();
+					sb.append(" lat=").append(lat / 1e7).append(" lon=").append(lon / 1e7);
+					sb.append(" spd=").append((speed & 0xFFFF) / 36.0).append("m/s");
+					sb.append(" hdg=").append((heading & 0xFFFF) / 10.0).append("°");
+					sb.append(" acc=").append(accuracy & 0xFF).append("m");
+					sb.append(" flags=0x").append(String.format("%02X", flags & 0xFF));
+					sb.append(" routeId=").append(routeId & 0xFFFF);
+				}
+				break;
+				
+			case PKT_MANEUVER:
+				sb.append("MANEUVER len=").append(packet.length);
+				if (packet.length >= 6) {
+					byte turn = buf.get();
+					short distM = buf.getShort();
+					byte exit = buf.get();
+					byte flags = buf.get();
+					byte strLen = buf.get();
+					sb.append(" turn=").append(turn & 0xFF);
+					sb.append(" dist=").append(distM & 0xFFFF).append("m");
+					sb.append(" exit=").append(exit & 0xFF);
+					if (strLen > 0 && packet.length >= 7 + (strLen & 0xFF)) {
+						byte[] strBytes = new byte[strLen & 0xFF];
+						buf.get(strBytes);
+						String street = new String(strBytes, StandardCharsets.UTF_8);
+						sb.append(" street=\"").append(street).append("\"");
+					}
+				}
+				break;
+				
+			case PKT_TRIP:
+				sb.append("TRIP len=").append(packet.length);
+				if (packet.length >= 12) {
+					int remainingM = buf.getInt();
+					int remainingS = buf.getInt();
+					short etaMinOfDay = buf.getShort();
+					byte arrived = buf.get();
+					sb.append(" remainM=").append(remainingM);
+					sb.append(" remainS=").append(remainingS);
+					sb.append(" eta=").append(etaMinOfDay & 0xFFFF).append("min");
+				}
+				break;
+				
+			case PKT_JUNCTION:
+				sb.append("JUNCTION len=").append(packet.length);
+				if (packet.length >= 6) {
+					buf.get();
+					byte jType = buf.get();
+					byte exitNum = buf.get();
+					short distM = buf.getShort();
+					sb.append(" type=").append(jType & 0xFF);
+					sb.append(" exit=").append(exitNum & 0xFF);
+					sb.append(" dist=").append(distM & 0xFFFF).append("m");
+				}
+				break;
+				
+			case PKT_ROUTE_META:
+				sb.append("ROUTE_META len=").append(packet.length);
+				if (packet.length >= 9) {
+					short routeId = buf.getShort();
+					byte source = buf.get();
+					byte flags = buf.get();
+					short backM = buf.getShort();
+					short totalM = buf.getShort();
+					sb.append(" routeId=").append(routeId & 0xFFFF);
+					sb.append(" src=").append(source & 0xFF);
+					sb.append(" flags=0x").append(String.format("%02X", flags & 0xFF));
+					sb.append(" back=").append(backM & 0xFFFF).append("m");
+					sb.append(" total=").append(totalM & 0xFFFF).append("m");
+				}
+				break;
+				
+			case PKT_TIME:
+				sb.append("TIME len=").append(packet.length);
+				if (packet.length >= 7) {
+					int unixSeconds = buf.getInt();
+					short offsetMinutes = buf.getShort();
+					sb.append(" unix=").append(unixSeconds);
+					sb.append(" offset=").append(offsetMinutes).append("min");
+				}
+				break;
+				
+			case PKT_HEARTBEAT:
+				sb.append("HEARTBEAT len=").append(packet.length);
+				if (packet.length >= 2) {
+					sb.append(" state=").append(packet[1] & 0xFF);
+				}
+				break;
+				
+			case PKT_CLEAR:
+				sb.append("CLEAR len=").append(packet.length);
+				break;
+				
+			default:
+				sb.append("UNKNOWN type=0x").append(String.format("%02X", type & 0xFF));
+				sb.append(" len=").append(packet.length);
+				break;
+		}
+		
+		return sb.toString();
 	}
 	
 	/**

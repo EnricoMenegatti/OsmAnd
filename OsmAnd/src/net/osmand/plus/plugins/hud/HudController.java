@@ -126,7 +126,14 @@ public class HudController {
 		sendTimeUpdate();
 		
 		RoutingHelper routingHelper = app.getRoutingHelper();
-		if (routingHelper.isRouteCalculated() && routingHelper.isFollowingMode()) {
+		boolean hasRoute = routingHelper.isRouteCalculated();
+		boolean isFollowing = routingHelper.isFollowingMode();
+		boolean isPlanning = routingHelper.isRoutePlanningMode();
+		
+		LOG.info("BLE connected: hasRoute=" + hasRoute + " isFollowing=" + isFollowing + 
+			" isPlanning=" + isPlanning);
+		
+		if (hasRoute && (isFollowing || isPlanning)) {
 			transitionTo(State.NAV);
 		} else if (plugin.HUD_FREE_RIDE.get() && lastLocation != null) {
 			transitionTo(State.FREE);
@@ -152,10 +159,21 @@ public class HudController {
 		lastPosTime = now;
 		
 		RoutingHelper routingHelper = app.getRoutingHelper();
-		boolean isNavigating = routingHelper.isRouteCalculated() && routingHelper.isFollowingMode();
+		boolean hasRoute = routingHelper.isRouteCalculated();
+		boolean isFollowing = routingHelper.isFollowingMode();
+		boolean isPlanning = routingHelper.isRoutePlanningMode();
+		boolean isNavigating = hasRoute && (isFollowing || isPlanning);
 		
 		if (isNavigating && currentState != State.NAV) {
+			LOG.info("Detected navigation route during location update, transitioning to NAV");
 			transitionTo(State.NAV);
+		} else if (!isNavigating && currentState == State.NAV) {
+			LOG.info("Route ended during location update");
+			if (plugin.HUD_FREE_RIDE.get()) {
+				transitionTo(State.FREE);
+			} else {
+				transitionTo(State.IDLE);
+			}
 		}
 		
 		switch (currentState) {

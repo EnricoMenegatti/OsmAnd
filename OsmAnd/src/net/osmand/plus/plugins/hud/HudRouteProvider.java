@@ -36,6 +36,7 @@ public class HudRouteProvider {
 	private TurnType lastManeuverType;
 	private long lastTripUpdate = 0;
 	private long lastJunctionCheckTime = 0;
+	private float lastValidHeading = 0;
 	
 	private static final long TRIP_UPDATE_INTERVAL = 5000;
 	private static final long JUNCTION_CHECK_INTERVAL = 3000;
@@ -87,7 +88,19 @@ public class HudRouteProvider {
 	
 	private void sendPosition(@NonNull Location location, @NonNull HudBleClient bleClient) {
 		int speedKmh10 = (int) (location.getSpeed() * 36);
-		int heading10 = location.hasBearing() ? (int) (location.getBearing() * 10) : 0;
+		
+		float heading = 0;
+		if (location.hasBearing() && location.hasSpeed() && location.getSpeed() > 1.0f) {
+			heading = location.getBearing();
+			lastValidHeading = heading;
+		} else if (location.hasBearing()) {
+			heading = location.getBearing();
+			lastValidHeading = heading;
+		} else {
+			heading = lastValidHeading;
+		}
+		
+		int heading10 = (int) (heading * 10);
 		int accuracyM = location.hasAccuracy() ? (int) location.getAccuracy() : 255;
 		
 		boolean snapped = false;
@@ -200,8 +213,8 @@ public class HudRouteProvider {
 			encoderPoints.add(new HudProtocolEncoder.LatLon(pt.getLatitude(), pt.getLongitude()));
 		}
 		
-		List<byte[]> pointsPackets = HudProtocolEncoder.encodePoints(
-			encoderPoints, 0, bleClient.getMtu()
+		List<byte[]> pointsPackets = HudProtocolEncoder.encodePointsDelta(
+			encoderPoints, origin.getLatitude(), origin.getLongitude(), 0, bleClient.getMtu()
 		);
 		
 		for (byte[] packet : pointsPackets) {

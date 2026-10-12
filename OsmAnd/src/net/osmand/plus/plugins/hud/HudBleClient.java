@@ -151,6 +151,9 @@ public class HudBleClient {
 			return;
 		}
 		
+		org.apache.commons.logging.Log txLog = PlatformUtil.getLog("HudTx");
+		txLog.info(HudProtocolEncoder.decodeForLog(data));
+		
 		synchronized (writeQueue) {
 			writeQueue.offer(data);
 			processWriteQueue();
