@@ -33,6 +33,7 @@ import java.util.Queue;
 import java.util.UUID;
 
 public class HudBleClient {
+	private static final String TAG = "HudBle";
 	private static final Log LOG = PlatformUtil.getLog(HudBleClient.class);
 	
 	private static final UUID SERVICE_UUID = UUID.fromString("8d1f0001-6a4c-4b3e-9a0e-7c2d5f1e4b00");
@@ -80,9 +81,14 @@ public class HudBleClient {
 		this.listener = listener;
 		this.debugLog = debugLog;
 		
+		LOG.info(TAG + ": Creating HudBleClient, debugLog=" + debugLog);
+		
 		BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
 		if (bluetoothManager != null) {
 			bluetoothAdapter = bluetoothManager.getAdapter();
+			LOG.info(TAG + ": BluetoothAdapter obtained, enabled=" + (bluetoothAdapter != null && bluetoothAdapter.isEnabled()));
+		} else {
+			LOG.error(TAG + ": BluetoothManager is null");
 		}
 	}
 	
@@ -90,14 +96,25 @@ public class HudBleClient {
 		this.targetAddress = address;
 		this.targetName = name;
 		
-		if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
-			listener.onConnectionError("Bluetooth not available or disabled");
+		LOG.info(TAG + ": connect() called with address=" + address + " name=" + name);
+		
+		if (bluetoothAdapter == null) {
+			LOG.error(TAG + ": BluetoothAdapter is null");
+			listener.onConnectionError("Bluetooth not available");
+			return;
+		}
+		
+		if (!bluetoothAdapter.isEnabled()) {
+			LOG.error(TAG + ": Bluetooth is disabled");
+			listener.onConnectionError("Bluetooth is disabled");
 			return;
 		}
 		
 		if (address != null && BluetoothAdapter.checkBluetoothAddress(address)) {
+			LOG.info(TAG + ": Valid address provided, connecting directly");
 			connectToDevice(address);
 		} else {
+			LOG.info(TAG + ": No valid address, starting scan for name=" + name);
 			startScan();
 		}
 	}
@@ -163,52 +180,80 @@ public class HudBleClient {
 	}
 	
 	private void startScan() {
-		if (bluetoothAdapter == null) return;
+		LOG.info(TAG + ": startScan() called");
+		
+		if (bluetoothAdapter == null) {
+			LOG.error(TAG + ": Cannot scan - bluetoothAdapter is null");
+			return;
+		}
 		
 		if (!hasBluetoothPermissions()) {
+			LOG.error(TAG + ": Missing BLUETOOTH_SCAN/CONNECT permissions");
 			listener.onConnectionError("Missing BLUETOOTH_SCAN permission (Android 12+)");
 			return;
 		}
 		
+		LOG.info(TAG + ": Bluetooth permissions OK");
+		
 		BluetoothLeScanner scanner = bluetoothAdapter.getBluetoothLeScanner();
 		if (scanner == null) {
+			LOG.error(TAG + ": getBluetoothLeScanner() returned null");
 			listener.onConnectionError("BLE scanner not available");
 			return;
 		}
 		
-		ScanFilter filter = new ScanFilter.Builder()
-				.setServiceUuid(new ParcelUuid(SERVICE_UUID))
-				.build();
-		
-		ScanSettings settings = new ScanSettings.Builder()
-				.setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-				.build();
+		LOG.info(TAG + ": Got BluetoothLeScanner, setting up filters");
 		
 		List<ScanFilter> filters = new ArrayList<>();
-		filters.add(filter);
 		
-		if (debugLog) {
-			LOG.info("Starting BLE scan for " + targetName);
-		}
+		ScanFilter nameFilter = new ScanFilter.Builder()
+			.setDeviceName(targetName)
+			.build();
+		filters.add(nameFilter);
+		
+		ScanFilter uuidFilter = new ScanFilter.Builder()
+			.setServiceUuid(new ParcelUuid(SERVICE_UUID))
+			.build();
+		filters.add(uuidFilter);
+		
+		ScanSettings settings = new ScanSettings.Builder()
+			.setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+			.build();
+		
+		LOG.info(TAG + ": Starting BLE scan for name=" + targetName + " or serviceUUID=" + SERVICE_UUID);
 		
 		try {
 			scanner.startScan(filters, settings, scanCallback);
+			LOG.info(TAG + ": Scan started successfully, timeout in " + SCAN_TIMEOUT_MS + "ms");
 			handler.postDelayed(this::stopScan, SCAN_TIMEOUT_MS);
 		} catch (SecurityException e) {
-			listener.onConnectionError("Missing Bluetooth permissions");
+			LOG.error(TAG + ": SecurityException during scan start", e);
+			listener.onConnectionError("Missing Bluetooth permissions: " + e.getMessage());
+		} catch (Exception e) {
+			LOG.error(TAG + ": Exception during scan start", e);
+			listener.onConnectionError("Scan failed: " + e.getMessage());
 		}
 	}
 	
 	private void stopScan() {
-		if (bluetoothAdapter == null) return;
+		LOG.info(TAG + ": stopScan() called");
+		if (bluetoothAdapter == null) {
+			LOG.warn(TAG + ": stopScan - bluetoothAdapter is null");
+			return;
+		}
 		
 		BluetoothLeScanner scanner = bluetoothAdapter.getBluetoothLeScanner();
 		if (scanner != null) {
 			try {
 				scanner.stopScan(scanCallback);
+				LOG.info(TAG + ": Scan stopped");
 			} catch (SecurityException e) {
-				LOG.warn("Error stopping scan", e);
+				LOG.warn(TAG + ": SecurityException stopping scan", e);
+			} catch (Exception e) {
+				LOG.warn(TAG + ": Exception stopping scan", e);
 			}
+		} else {
+			LOG.warn(TAG + ": stopScan - scanner is null");
 		}
 	}
 	
@@ -216,24 +261,30 @@ public class HudBleClient {
 		@Override
 		public void onScanResult(int callbackType, ScanResult result) {
 			BluetoothDevice device = result.getDevice();
+			LOG.info(TAG + ": onScanResult - device found");
 			try {
 				String name = device.getName();
+				String address = device.getAddress();
+				LOG.info(TAG + ": Device: name=" + name + " address=" + address + " rssi=" + result.getRssi());
+				
 				if (targetName.equals(name)) {
-					if (debugLog) {
-						LOG.info("Found HUD device: " + device.getAddress());
-					}
+					LOG.info(TAG + ": Found matching HUD device: " + address);
 					stopScan();
-					targetAddress = device.getAddress();
-					connectToDevice(device.getAddress());
+					targetAddress = address;
+					connectToDevice(address);
+				} else {
+					LOG.info(TAG + ": Device name '" + name + "' doesn't match target '" + targetName + "'");
 				}
 			} catch (SecurityException e) {
-				LOG.warn("Security exception reading device name", e);
+				LOG.error(TAG + ": SecurityException reading device info", e);
+			} catch (Exception e) {
+				LOG.error(TAG + ": Exception in onScanResult", e);
 			}
 		}
 		
 		@Override
 		public void onScanFailed(int errorCode) {
-			LOG.error("BLE scan failed: " + errorCode);
+			LOG.error(TAG + ": BLE scan failed with error code: " + errorCode);
 			listener.onConnectionError("Scan failed: " + errorCode);
 		}
 	};
@@ -249,17 +300,19 @@ public class HudBleClient {
 	}
 	
 	private void connectToDevice(@NonNull String address) {
+		LOG.info(TAG + ": connectToDevice() address=" + address);
+		
 		if (!hasBluetoothPermissions()) {
+			LOG.error(TAG + ": Missing BLUETOOTH_CONNECT permission");
 			listener.onConnectionError("Missing BLUETOOTH_CONNECT permission (Android 12+)");
 			return;
 		}
 		
+		LOG.info(TAG + ": Bluetooth permissions OK for connect");
+		
 		try {
 			BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
-			
-			if (debugLog) {
-				LOG.info("Connecting to " + address);
-			}
+			LOG.info(TAG + ": Got BluetoothDevice, calling connectGatt");
 			
 			bluetoothGatt = device.connectGatt(context, false, gattCallback, 
 					BluetoothDevice.TRANSPORT_LE);
@@ -275,26 +328,28 @@ public class HudBleClient {
 	private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
 		@Override
 		public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+			LOG.info(TAG + ": onConnectionStateChange status=" + status + " newState=" + newState);
+			
 			if (newState == BluetoothProfile.STATE_CONNECTED) {
-				if (debugLog) {
-					LOG.info("GATT connected");
-				}
+				LOG.info(TAG + ": GATT connected, requesting MTU=" + MTU_PREFERRED);
 				
 				try {
-					gatt.requestMtu(MTU_PREFERRED);
+					boolean ok = gatt.requestMtu(MTU_PREFERRED);
+					LOG.info(TAG + ": MTU request returned: " + ok);
 				} catch (SecurityException e) {
-					LOG.warn("MTU request failed", e);
+					LOG.error(TAG + ": SecurityException requesting MTU", e);
+				} catch (Exception e) {
+					LOG.error(TAG + ": Exception requesting MTU", e);
 				}
 			} else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-				if (debugLog) {
-					LOG.info("GATT disconnected");
-				}
+				LOG.info(TAG + ": GATT disconnected, status=" + status);
 				
 				connected = false;
 				notifyEnabled = false;
 				listener.onDisconnected();
 				
 				if (targetAddress != null) {
+					LOG.info(TAG + ": Scheduling reconnect");
 					scheduleReconnect();
 				}
 			}
@@ -302,40 +357,59 @@ public class HudBleClient {
 		
 		@Override
 		public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
+			LOG.info(TAG + ": onMtuChanged mtu=" + mtu + " status=" + status);
+			
 			if (status == BluetoothGatt.GATT_SUCCESS) {
 				currentMtu = mtu;
-				if (debugLog) {
-					LOG.info("MTU changed to " + mtu);
-				}
+				LOG.info(TAG + ": MTU successfully changed to " + mtu);
+			} else {
+				LOG.warn(TAG + ": MTU change failed with status=" + status);
 			}
 			
 			try {
 				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+					LOG.info(TAG + ": Requesting PHY LE_2M");
 					gatt.setPreferredPhy(BluetoothDevice.PHY_LE_2M, BluetoothDevice.PHY_LE_2M, 
 							BluetoothDevice.PHY_OPTION_NO_PREFERRED);
 				}
 			} catch (SecurityException e) {
-				LOG.warn("PHY request failed", e);
+				LOG.warn(TAG + ": SecurityException requesting PHY", e);
+			} catch (Exception e) {
+				LOG.warn(TAG + ": Exception requesting PHY", e);
 			}
 			
+			LOG.info(TAG + ": Starting service discovery");
 			try {
-				gatt.discoverServices();
+				boolean ok = gatt.discoverServices();
+				LOG.info(TAG + ": discoverServices returned: " + ok);
 			} catch (SecurityException e) {
-				LOG.warn("Service discovery failed", e);
+				LOG.error(TAG + ": SecurityException discovering services", e);
+			} catch (Exception e) {
+				LOG.error(TAG + ": Exception discovering services", e);
 			}
 		}
 		
 		@Override
 		public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+			LOG.info(TAG + ": onServicesDiscovered status=" + status);
+			
 			if (status == BluetoothGatt.GATT_SUCCESS) {
+				LOG.info(TAG + ": Service discovery successful, looking for service " + SERVICE_UUID);
 				BluetoothGattService service = gatt.getService(SERVICE_UUID);
+				
 				if (service != null) {
+					LOG.info(TAG + ": Found HUD service, getting characteristics");
 					rxCharacteristic = service.getCharacteristic(RX_UUID);
 					statusCharacteristic = service.getCharacteristic(STATUS_UUID);
 					
+					LOG.info(TAG + ": RX characteristic: " + (rxCharacteristic != null ? "found" : "NOT FOUND"));
+					LOG.info(TAG + ": STATUS characteristic: " + (statusCharacteristic != null ? "found" : "NOT FOUND"));
+					
 					if (rxCharacteristic != null && statusCharacteristic != null) {
+						LOG.info(TAG + ": All characteristics found, enabling notifications");
 						enableStatusNotifications();
 					} else {
+						LOG.error(TAG + ": Missing characteristics");
 						LOG.error("Required characteristics not found");
 						gatt.disconnect();
 					}

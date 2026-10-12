@@ -49,6 +49,8 @@ public class HudController {
 	}
 	
 	public void init() {
+		LOG.info("HudController init starting");
+		
 		routeProvider = new HudRouteProvider(app, plugin);
 		freeRideFollower = new FreeRideRoadFollower(app, plugin);
 		
@@ -79,19 +81,35 @@ public class HudController {
 					LOG.error("HUD connection error: " + error);
 				}
 			},
-			plugin.HUD_DEBUG_LOG.get()
+			true
 		);
 		
+		LOG.info("HudController starting connection attempt");
+		startConnection();
+		
+		handler.post(this::periodicTasks);
+	}
+	
+	private void startConnection() {
 		handler.postDelayed(() -> {
 			String address = plugin.HUD_DEVICE_ADDRESS.get();
 			String name = plugin.HUD_DEVICE_NAME.get();
 			
-			if (address != null || name != null) {
-				bleClient.connect(address, name != null ? name : "HUD-Moto");
+			if (name == null || name.isEmpty()) {
+				name = "HUD-Moto";
 			}
+			
+			LOG.info("HudController connecting: address=" + address + " name=" + name);
+			bleClient.connect(address, name);
 		}, 3000);
-		
-		handler.post(this::periodicTasks);
+	}
+	
+	public void reconnect() {
+		LOG.info("HudController reconnect requested");
+		if (bleClient != null) {
+			bleClient.disconnect();
+			startConnection();
+		}
 	}
 	
 	public void destroy() {
@@ -270,13 +288,7 @@ public class HudController {
 		return bleClient != null && bleClient.isConnected();
 	}
 	
-	public void reconnect() {
-		if (bleClient != null) {
-			String address = plugin.HUD_DEVICE_ADDRESS.get();
-			String name = plugin.HUD_DEVICE_NAME.get();
-			bleClient.disconnect();
-			handler.postDelayed(() -> 
-				bleClient.connect(address, name != null ? name : "HUD-Moto"), 1000);
-		}
+	public HudBleClient getBleClient() {
+		return bleClient;
 	}
 }
